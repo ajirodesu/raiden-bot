@@ -1,0 +1,28 @@
+{
+  "name": "raiden-bot",
+  "version": "7.3.1",
+  "description": "A Facebook Messenger Bot by AjiroDesu",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --trace-warnings --async-stack-traces index.js",
+    "login": "node core/system/login.js"
+  },
+  "author": "AjiroDesu",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^5.3.0",
+    "express": "^4.18.2",
+    "fs-extra": "^11.1.1",
+    "groq-sdk": "^1.1.2",
+    "moment-timezone": "^0.5.43",
+    "node-cron": "^3.0.3",
+    "sequelize": "^6.35.0",
+    "sqlite3": "^5.1.7",
+    "stfca": "^1.0.0",
+    "string-similarity": "^4.0.4",
+    "websocket-stream": "^5.5.2"
+  }
+}
