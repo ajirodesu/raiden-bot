@@ -1,0 +1,36 @@
+{
+  "adminUpdate": {
+    "autoUnsend": true,
+    "sendNoti": true,
+    "timeToUnsend": 10
+  },
+  "log": {
+    "enable": true
+  },
+  "rankup": {
+    "autoUnsend": "",
+    "unsendMessageAfter": 5
+  },
+  "work": {
+    "cooldownTime": 1200000
+  },
+  "work-beta": {
+    "cooldownTime": 1200000
+  },
+  "job-beta": {
+    "cooldownTime": 5000
+  },
+  "job": {
+    "cooldownTime": 5000
+  },
+  "daily": {
+    "cooldownTime": 43200000,
+    "rewardCoin": 248
+  },
+  "fish": {
+    "cooldownTime": 1000000
+  },
+  "cave": {
+    "cooldownTime": 1000000
+  }
+}

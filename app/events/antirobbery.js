@@ -6,7 +6,7 @@ export const meta = {
   eventType:   ['log:thread-admins'],
 };
 
-export async function onEvent({ api, event, Threads }) {
+export async function onEvent({ api, event, Threads, response }) {
   const { threadID, logMessageType, logMessageData, author } = event;
 
   const row  = await Threads.getData(threadID);
@@ -17,31 +17,29 @@ export async function onEvent({ api, event, Threads }) {
 
   const botID = api.getCurrentUserID();
 
-  // Never interfere with the bot's own actions
-  if (author === botID) return;
-  if (logMessageData.TARGET_ID === botID) return;
+  // Never interfere with the bot's own actions or the bot being targeted
+  if (author === botID || logMessageData.TARGET_ID === botID) return;
 
   if (logMessageData.ADMIN_EVENT === 'add_admin') {
-    // Revoke unauthorized promotion of any user
-    api.changeAdminStatus(threadID, logMessageData.TARGET_ID, false, (err) => {
-      if (err) {
-        api.sendMessage('⚠️ Guard mode: failed to revert admin promotion.', threadID);
-      } else {
-        api.sendMessage('🛡️ Guard mode: unauthorized admin promotion was blocked.', threadID);
-      }
-    });
-    // Also demote the person who did it
-    api.changeAdminStatus(threadID, author, false);
+    // Revoke unauthorized promotion
+    try {
+      await response.call('changeAdminStatus', threadID, logMessageData.TARGET_ID, false);
+      await response.send('🛡️ Guard mode: unauthorized admin promotion was blocked.', threadID);
+    } catch {
+      await response.send('⚠️ Guard mode: failed to revert admin promotion.', threadID);
+    }
+    // Also demote the person who triggered it (fire-and-forget)
+    response.call('changeAdminStatus', threadID, author, false).catch(() => {});
+
   } else if (logMessageData.ADMIN_EVENT === 'remove_admin') {
     // Restore the demoted admin
-    api.changeAdminStatus(threadID, logMessageData.TARGET_ID, true, (err) => {
-      if (err) {
-        api.sendMessage('⚠️ Guard mode: failed to restore admin status.', threadID);
-      } else {
-        api.sendMessage('🛡️ Guard mode: unauthorized admin removal was blocked.', threadID);
-      }
-    });
-    // Also demote the person who did it
-    api.changeAdminStatus(threadID, author, false);
+    try {
+      await response.call('changeAdminStatus', threadID, logMessageData.TARGET_ID, true);
+      await response.send('🛡️ Guard mode: unauthorized admin removal was blocked.', threadID);
+    } catch {
+      await response.send('⚠️ Guard mode: failed to restore admin status.', threadID);
+    }
+    // Also demote the person who triggered it (fire-and-forget)
+    response.call('changeAdminStatus', threadID, author, false).catch(() => {});
   }
 }

@@ -12,67 +12,149 @@
  */
 
 /**
+ * Normalize a message payload for stfca send/edit methods.
+ * @param {string|object} message
+ * @returns {string|object}
+ */
+function normalizeMessage(message) {
+  if (typeof message === 'string') return message;
+  if (message && typeof message === 'object') return { ...message };
+  return String(message ?? '');
+}
+
+/**
+ * Wrap callback-style api methods in a promise.
+ * @param {Function} executor
+ * @returns {Promise<any>}
+ */
+function asPromise(executor) {
+  return new Promise((resolve, reject) => {
+    try {
+      executor((err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+/**
  * @param {object} api   - FCA api object
  * @param {object} event - Incoming message event
  * @returns {object}     - Response helpers
  */
 export function createResponse(api, event) {
-  const { threadID, messageID } = event;
+  const threadID   = String(event?.threadID ?? '');
+  const messageID  = event?.messageID ? String(event.messageID) : undefined;
+  const senderID   = event?.senderID ? String(event.senderID) : undefined;
+  const mentions   = event?.mentions || {};
+  const replyEvent = event?.messageReply || null;
+
+  const call = (methodName, ...args) => {
+    const method = api?.[methodName];
+    if (typeof method !== 'function') {
+      throw new Error(`[response.${methodName}] api.${methodName} is not available.`);
+    }
+
+    return asPromise((done) => method.apply(api, [...args, done]));
+  };
+
+  const send = (message, targetThreadID = threadID, replyToMessageID = null) => {
+    const payload = normalizeMessage(message);
+    return asPromise((done) => {
+      if (replyToMessageID) {
+        return api.sendMessage(payload, targetThreadID, done, replyToMessageID);
+      }
+      return api.sendMessage(payload, targetThreadID, done);
+    });
+  };
+
+  const reply = (message, replyToMessageID = messageID) => send(message, threadID, replyToMessageID);
+  const react = (emoji, targetMessageID = messageID, isSender = true) => asPromise((done) => {
+    if (typeof api.setMessageReaction !== 'function') {
+      throw new Error('[response.setMessageReaction] api.setMessageReaction is not available.');
+    }
+    return api.setMessageReaction(emoji, targetMessageID, done, isSender);
+  });
+  const unsend = (targetMessageID = messageID) => call('unsendMessage', targetMessageID);
+  const edit = (message, targetMessageID = messageID) => call('editMessage', normalizeMessage(message), targetMessageID);
+  const typing = (targetThreadID = threadID) => call('sendTypingIndicator', targetThreadID);
+  const read = (targetMessageID = messageID) => call('markAsRead', targetMessageID);
+  const deliver = (targetThreadID = threadID, targetMessageID = messageID) => call('markAsDelivered', targetThreadID, targetMessageID);
+  const seen = (targetThreadID = threadID) => call('markAsSeen', targetThreadID);
+  const getMessage = (targetMessageID = messageID) => call('getMessage', targetMessageID);
+  const getThreadInfo = (targetThreadID = threadID) => call('getThreadInfo', targetThreadID);
+  const getUserInfo = (targetUserID = senderID) => call('getUserInfo', targetUserID);
+  const shareContact = (...args) => call('shareContact', ...args);
+  const shareLink = (...args) => call('shareLink', ...args);
+  const createPoll = (...args) => call('createPoll', ...args);
+  const forwardAttachment = (...args) => call('forwardAttachment', ...args);
+  const uploadAttachment = (...args) => call('uploadAttachment', ...args);
+  const markAsReadAll = (...args) => call('markAsReadAll', ...args);
+  const getThreadHistory = (...args) => call('getThreadHistory', ...args);
 
   return {
-    /**
-     * Reply to the original message (quoted reply).
-     * @param {string|object} message
-     * @returns {Promise<object>} message info
-     */
-    reply(message) {
-      return new Promise((resolve, reject) => {
-        api.sendMessage(message, threadID, (err, info) => {
-          if (err) return reject(err);
-          resolve(info);
-        }, messageID);
-      });
-    },
+    api,
+    event,
+    threadID,
+    messageID,
+    senderID,
+    mentions,
+    messageReply: replyEvent,
 
-    /**
-     * Send a message to any thread (defaults to current thread).
-     * @param {string|object} message
-     * @param {string} [targetThreadID]
-     * @returns {Promise<object>} message info
-     */
-    send(message, targetThreadID = threadID) {
-      return new Promise((resolve, reject) => {
-        api.sendMessage(message, targetThreadID, (err, info) => {
-          if (err) return reject(err);
-          resolve(info);
-        });
-      });
-    },
+    call,
+    send,
+    reply,
+    react,
+    unsend,
+    edit,
+    typing,
+    read,
+    deliver,
+    seen,
+    getMessage,
+    getThreadInfo,
+    getUserInfo,
+    shareContact,
+    shareLink,
+    createPoll,
+    forwardAttachment,
+    uploadAttachment,
+    markAsReadAll,
+    getThreadHistory,
 
-    /**
-     * React to the current message.
-     * @param {string} emoji
-     */
-    react(emoji) {
-      return new Promise((resolve, reject) => {
-        api.setMessageReaction(emoji, messageID, (err) => {
-          if (err) return reject(err);
-          resolve();
-        }, true);
-      });
-    },
-
-    /**
-     * Unsend a message by its ID.
-     * @param {string} msgID
-     */
-    unsend(msgID) {
-      return new Promise((resolve, reject) => {
-        api.unsendMessage(msgID, (err) => {
-          if (err) return reject(err);
-          resolve();
-        });
-      });
+    // Backward-compatible aliases and a nested namespace for message helpers.
+    sendMessage: send,
+    replyMessage: reply,
+    reaction: react,
+    delete: unsend,
+    startTyping: typing,
+    markRead: read,
+    markDelivered: deliver,
+    markSeen: seen,
+    message: {
+      send,
+      reply,
+      react,
+      unsend,
+      edit,
+      typing,
+      read,
+      deliver,
+      seen,
+      getMessage,
+      getThreadInfo,
+      getUserInfo,
+      shareContact,
+      shareLink,
+      createPoll,
+      forwardAttachment,
+      uploadAttachment,
+      markAsReadAll,
+      getThreadHistory,
+      call,
     },
 
     /**

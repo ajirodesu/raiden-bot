@@ -1,0 +1,170 @@
+# Raiden Bot
+
+Raiden Bot is a Facebook Messenger automation bot built with **Node.js ESM**, **SQLite / Sequelize**, and **stfca**.
+
+## What it currently does
+
+It boots an Express dashboard, loads commands and events from disk, connects to SQLite, logs in through `stfca`, and listens for Messenger events. The bot also supports a Groq-powered AI mention mode, a modular reply/reaction system, and a tagged terminal logger.
+
+## Scripts
+
+```bash
+npm install
+npm run login   # generate json/appstate.json from Facebook credentials
+npm start       # start the dashboard + bot
+npm run dev     # start with trace warnings
+```
+
+## Project layout
+
+```text
+raiden/
+├── index.js
+├── package.json
+├── json/
+│   ├── config.json
+│   ├── endpoint.json
+│   └── appstate.json
+├── core/
+│   ├── main.js
+│   ├── controllers/
+│   │   ├── users.js
+│   │   ├── threads.js
+│   │   └── currencies.js
+│   ├── database/
+│   │   ├── index.js
+│   │   ├── model.js
+│   │   └── models/
+│   │       ├── users.js
+│   │       ├── threads.js
+│   │       └── currencies.js
+│   ├── handle/
+│   │   ├── handleCommand.js
+│   │   ├── handleCommandEvent.js
+│   │   ├── handleCreateDatabase.js
+│   │   ├── handleEvent.js
+│   │   ├── handleReaction.js
+│   │   └── handleReply.js
+│   ├── system/
+│   │   ├── listen.js
+│   │   ├── login.js
+│   │   └── response.js
+│   ├── utils/
+│   │   ├── log.js
+│   │   └── index.js
+│   └── web/
+│       └── index.html
+└── app/
+    ├── commands/
+    └── events/
+```
+
+## Current features
+
+- Auto-restarting entry point (`index.js`)
+- Express dashboard / uptime page
+- Login script that writes `json/appstate.json`
+- SQLite database bootstrap and model loading
+- Command scanning, deployment, and duplicate-name protection
+- Event scanning and deployment
+- Prefix commands plus bot-name mention AI mode
+- Reply and reaction handler registration
+- Anti-out / anti-robbery / logging events
+- Optional Groq AI support when `GROQ_API_KEY` is set
+- Tagged terminal logger with section banners
+
+## Commands included in the repository
+
+- `bluearchive` — random Blue Archive image
+- `copilot` — AI chat via the configured endpoint
+- `cosplay` — random cosplay video
+- `help` — command help and command details
+- `shell` — developer-only shell execution
+- `uid` — user ID lookup
+
+## Events included in the repository
+
+- `adminUpdate` — tracks admin, title, emoji, color, and nickname changes
+- `antiout` — re-adds users who leave when enabled in thread data
+- `antirobbery` — reverts unauthorized admin changes when enabled
+- `joinNoti` — welcome / bot-added notifications
+- `leaveNoti` — farewell / bot-left notifications
+- `log` — thread activity logging and admin reporting
+
+## Response helper API
+
+`core/system/response.js` exports `createResponse(api, event)` and returns a promise-based message helper.
+
+```js
+const response = createResponse(api, event);
+await response.reply('Hello');
+await response.send('Broadcast text');
+await response.react('👍');
+await response.unsend(messageID);
+await response.edit('Updated text');
+```
+
+Available helpers:
+
+- `response.reply(message, replyToMessageID?)`
+- `response.send(message, threadID?, replyToMessageID?)`
+- `response.react(emoji, messageID?, isSender?)`
+- `response.unsend(messageID?)`
+- `response.edit(message, messageID?)`
+- `response.typing(threadID?)`
+- `response.read(messageID?)`
+- `response.deliver(threadID?, messageID?)`
+- `response.seen(threadID?)`
+- `response.getMessage(messageID?)`
+- `response.getThreadInfo(threadID?)`
+- `response.getUserInfo(userID?)`
+- `response.shareContact(...)`
+- `response.shareLink(...)`
+- `response.createPoll(...)`
+- `response.forwardAttachment(...)`
+- `response.uploadAttachment(...)`
+- `response.markAsReadAll(...)`
+- `response.getThreadHistory(...)`
+- `response.addReply({...})`
+- `response.addReaction({...})`
+
+It also exposes `response.message.*` as a nested alias and `response.call(methodName, ...args)` for direct access to the underlying API methods.
+
+## Configuration keys in `json/config.json`
+
+- `DeveloperMode`
+- `autoCreateDB`
+- `allowInbox`
+- `autoClean`
+- `adminOnly`
+- `commandDisabled`
+- `eventDisabled`
+- `GROQ_API_KEY`
+- `DEVELOPER`
+- `BOTNAME`
+- `PREFIX`
+- `ADMINBOT`
+- `DATABASE.sqlite.storage`
+- `APPSTATEPATH`
+- `FCAOption`
+
+## Database tables
+
+The project loads three Sequelize models:
+
+- `Users`
+- `Threads`
+- `Currencies`
+
+Each controller exposes `getAll`, `getData`, `setData`, `delData`, and `createData`. The currencies controller also includes `increaseMoney` and `decreaseMoney`.
+
+## Logging
+
+`core/utils/log.js` provides tagged logs such as `RAIDEN`, `COMMANDS`, `EVENT`, `LOGIN`, `DATABASE`, `USER`, `THREAD`, `DEV`, `WARN`, and `ERROR`. Section headers are printed on their own line so scan and deploy phases stay easy to read. Raw st-fca output is normalized too: emoji noise is stripped and update or version-check lines are shown first so startup logs stay clean.
+
+## Notes
+
+- `appstate.json` is generated by the login helper.
+- `core/system/response.js` is the response wrapper used by command and event handlers.
+- `shell` is limited to developer accounts.
+- The dashboard is served from `core/web/index.html`.

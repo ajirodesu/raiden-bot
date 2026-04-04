@@ -1,33 +1,38 @@
 {
-  "DeveloperMode": false,
-  "autoCreateDB": true,
-  "allowInbox": true,
-  "autoClean": false,
-  "adminOnly": false,
-  "commandDisabled": [],
-  "eventDisabled": [],
-  "GROQ_API_KEY": "",
-  "DEVELOPER": {
-    "NAME": "AjiroDesu",
-    "LINK": "https://www.facebook.com/lance.cochangco",
-    "ID": "1164038524",
-    "BOTCREATOR": "AjiroDesu"
-  },
-  "BOTNAME": "Raiden",
-  "PREFIX": "/",
-  "ADMINBOT": ["1164038524"],
-  "DATABASE": {
-    "sqlite": {
-      "storage": "core/database/data.sqlite"
+    "DeveloperMode": false,
+    "autoCreateDB": true,
+    "allowInbox": true,
+    "autoClean": false,
+    "adminOnly": false,
+    "commandDisabled": [],
+    "eventDisabled": [],
+    "TIMEZONE": "Asia/Manila",
+    "GROQ_API_KEY": "",
+    "DEVELOPER": {
+        "NAME": "AjiroDesu",
+        "LINK": "https://www.facebook.com/lance.cochangco",
+        "ID": "1164038524"
+    },
+    "BOTNAME": "Raiden",
+    "PREFIX": "+",
+    "ADMINBOT": [
+        "1164038524"
+    ],
+    "PREMIUM": [
+        "1164038524"
+    ],
+    "DATABASE": {
+        "sqlite": {
+            "storage": "core/database/data.sqlite"
+        }
+    },
+    "APPSTATEPATH": "json/appstate.json",
+    "FCAOption": {
+        "forceLogin": true,
+        "listenEvents": true,
+        "pauseLog": true,
+        "logLevel": "silent",
+        "selfListen": false,
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
-  },
-  "APPSTATEPATH": "json/appstate.json",
-  "FCAOption": {
-    "forceLogin": true,
-    "listenEvents": true,
-    "pauseLog": true,
-    "logLevel": "silent",
-    "selfListen": false,
-    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-  }
 }

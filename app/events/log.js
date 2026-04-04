@@ -9,8 +9,8 @@ export const meta = {
   },
 };
 
-export async function onEvent({ api, event, Threads }) {
-  const cfg = global.configModule?.log || meta.envConfig;
+export async function onEvent({ api, event, Threads, response }) {
+  const cfg = global.configCmd?.log || meta.envConfig;
   if (!cfg.enable) return;
 
   const { threadID, logMessageType, logMessageData, author } = event;
@@ -25,8 +25,10 @@ export async function onEvent({ api, event, Threads }) {
       let   oldName = '(unknown)';
       try {
         const row = await Threads.getData(threadID);
-        oldName = row?.threadInfo?.threadName || oldName;
-        await Threads.setData(threadID, { threadInfo: { ...row?.threadInfo, threadName: newName } });
+        oldName   = row?.threadInfo?.threadName || oldName;
+        await Threads.setData(threadID, {
+          threadInfo: { ...row?.threadInfo, threadName: newName },
+        });
       } catch { /* non-fatal */ }
       task = `Group name changed from "${oldName}" to "${newName}".`;
       break;
@@ -57,7 +59,10 @@ export async function onEvent({ api, event, Threads }) {
     `👤 By       : ${author}\n` +
     `🕐 Time     : ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })}`;
 
-  api.sendMessage(report, adminID, (err) => {
-    if (err) console.error('[log event] Failed to send report to admin:', err);
-  });
+  // Send to admin's DM (different thread — use response.send with explicit target)
+  try {
+    await response.send(report, adminID);
+  } catch (err) {
+    console.error('[log event] Failed to send report to admin:', err);
+  }
 }

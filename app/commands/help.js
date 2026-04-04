@@ -1,110 +1,160 @@
 export const meta = {
   name: "help",
-  version: "1.0.3",
-  type: "anyone", // anyone | groupadmin | premium | developer
+  version: "1.0.7",
+  type: "anyone",
   author: "AjiroDesu",
   description: "Beginner's Guide — lists all commands or shows details about a specific command.",
   category: "system",
-  guide: ["[command name]"],
+  guide: ["[command name]", "all", "<page number>"],
   cooldowns: 5,
   autoUnsend: false,
   delayUnsend: 20
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function getPermissionLabel(type) {
-  switch (type) {
-    case "groupadmin": return "Group Administrator";
-    case "developer":  return "Bot Administrator";
-    case "premium":    return "Premium User";
-    default:           return "Regular User";
+// ── Resolve command by name OR alias ─────────────────────────────────────
+function resolveCommand(target, commands) {
+  target = String(target).toLowerCase().trim();
+  if (!target) return null;
+
+  let cmd = commands.get(target);
+  if (cmd) return cmd;
+
+  for (const [, c] of commands.entries()) {
+    if (Array.isArray(c.meta?.aliases) &&
+        c.meta.aliases.some(a => String(a).toLowerCase() === target)) {
+      return c;
+    }
   }
+  return null;
 }
 
-function buildModuleInfo(command, prefix) {
-  const permission = getPermissionLabel(command.meta.type);
-  const usage = command.meta.guide?.join(" ") || "";
-  const usageLine = usage ? ` ${usage}` : "";
+// ── Visibility check ──────────────────────────────────────────────────────
+function isCommandVisible(command, senderID, threadID) {
+  const m       = command.meta || {};
+  const reqType = (m.type || "anyone").toLowerCase();
 
-  return `COMMAND INFORMATION
+  if (String(m.category || "").toLowerCase() === "hidden") return false;
 
-Name        : ${command.meta.name}
-Description : ${command.meta.description}
-Usage       : ${prefix}${command.meta.name}${usageLine}
-Category    : ${command.meta.category.toUpperCase()}
-Cooldown    : ${command.meta.cooldowns} second(s)
-Permission  : ${permission}
-Version     : ${command.meta.version}
-Author      : ${command.meta.author}`;
+  const userID   = String(senderID);
+  const config   = global.config || {};
+  const isDev    = Array.isArray(config.ADMINBOT) && config.ADMINBOT.includes(userID);
+  const isPremium = Array.isArray(config.PREMIUM) && config.PREMIUM.includes(userID);
+
+  let isGroupAdmin = false;
+  try {
+    const tID  = parseInt(threadID);
+    const info = global.data.threadInfo?.get(tID) || global.data.threadInfo?.get(threadID);
+    if (info?.adminIDs) {
+      isGroupAdmin = info.adminIDs.some(a => String(a.id) === userID);
+    }
+  } catch { /* non-fatal */ }
+
+  if (reqType === "anyone")     return true;
+  if (reqType === "groupadmin") return isGroupAdmin || isDev;
+  if (reqType === "premium")    return isPremium    || isDev;
+  if (reqType === "developer")  return isDev;
+  return false;
 }
 
-// ── Event handler (inline help trigger) ───────────────────────────────────
-export async function onEvent({ api, event }) {
+// ── Command detail block ──────────────────────────────────────────────────
+function buildCommandInfo(command, prefix) {
+  const m = command.meta || {};
+
+  const aliasesList = Array.isArray(m.aliases) && m.aliases.length
+    ? m.aliases.map(a => String(a).toLowerCase()).join(", ")
+    : "None";
+
+  const guides = Array.isArray(m.guide) ? m.guide : [m.guide || ""];
+  const usageLines = guides
+    .map(g => g ? `${prefix}${m.name} ${g}` : `${prefix}${m.name}`)
+    .join("\n");
+
+  return (
+    `🛠️ COMMAND INTERFACE\n\n` +
+    `▫️ Name: ${m.name}\n` +
+    `▫️ Version: v${m.version || "1.0.0"}\n` +
+    `▫️ Category: ${(m.category || "OTHER").toUpperCase()}\n` +
+    `▫️ Type: ${(m.type || "anyone").toUpperCase()}\n` +
+    `▫️ Cooldown: ${m.cooldowns || 0}s\n` +
+    `▫️ Aliases: ${aliasesList}\n\n` +
+    `📝 Description:\n${m.description || "No description provided."}\n\n` +
+    `🕹️ Usage:\n${usageLines}`
+  );
+}
+
+// ── Inline event trigger (e.g. "help <command>" without prefix) ───────────
+export async function onEvent({ event, response }) {
   const { commands } = global.client;
-  const { threadID, messageID, body } = event;
+  const { body }     = event;
 
-  if (!body || typeof body === "undefined" || body.indexOf("help") !== 0) return;
+  if (!body || body.indexOf("help") !== 0) return;
 
-  const splitBody = body.slice(body.indexOf("help")).trim().split(/\s+/);
-  if (splitBody.length === 1 || !commands.has(splitBody[1].toLowerCase())) return;
+  const parts = body.slice(body.indexOf("help")).trim().split(/\s+/);
+  if (parts.length < 2) return;
+
+  const command = resolveCommand(parts[1].toLowerCase(), commands);
+  if (!command) return;
+
+  const threadSetting = global.data.threadData.get(parseInt(event.threadID)) || {};
+  const prefix = Object.prototype.hasOwnProperty.call(threadSetting, "PREFIX")
+    ? threadSetting.PREFIX
+    : global.config.PREFIX;
+
+  return response.reply(buildCommandInfo(command, prefix));
+}
+
+// ── Main command ──────────────────────────────────────────────────────────
+export async function onStart({ event, args, response }) {
+  const { commands }  = global.client;
+  const { threadID, senderID } = event;
 
   const threadSetting = global.data.threadData.get(parseInt(threadID)) || {};
-  const command       = commands.get(splitBody[1].toLowerCase());
-  const prefix        = threadSetting.hasOwnProperty("PREFIX") ? threadSetting.PREFIX : global.config.PREFIX;
+  const prefix  = Object.prototype.hasOwnProperty.call(threadSetting, "PREFIX")
+    ? threadSetting.PREFIX
+    : global.config.PREFIX;
+  const botName = (global.config.BOTNAME || "BOT").toUpperCase();
+  const targetArg = (args[0] || "").toLowerCase().trim();
 
-  return api.sendMessage(buildModuleInfo(command, prefix), threadID, messageID);
-}
-
-// ── Main command ───────────────────────────────────────────────────────────
-export async function onStart({ api, event, args, response }) {
-  const { commands }        = global.client;
-  const { threadID, messageID } = event;
-
-  const threadSetting       = global.data.threadData.get(parseInt(threadID)) || {};
-  const prefix              = threadSetting.hasOwnProperty("PREFIX") ? threadSetting.PREFIX : global.config.PREFIX;
-  const botName             = (global.config.BOTNAME || "BOT").toUpperCase();
-
-  const targetArg = (args[0] || "").toLowerCase();
-  const command   = commands.get(targetArg);
-
-  // ── Specific command info ────────────────────────────────────────────
-  if (command) {
-    return response.reply(buildModuleInfo(command, prefix));
+  // ── Specific command info ─────────────────────────────────────────────
+  if (targetArg && targetArg !== "all" && isNaN(Number(targetArg))) {
+    const command = resolveCommand(targetArg, commands);
+    if (command) return response.reply(buildCommandInfo(command, prefix));
   }
 
-  // ── Tree / all view ─────────────────────────────────────────────────
+  // ── Full tree view ────────────────────────────────────────────────────
   if (targetArg === "all") {
     const grouped = {};
     for (const [, value] of commands) {
+      if (!isCommandVisible(value, senderID, threadID)) continue;
       const cat = value.meta.category || "other";
-      if (!grouped[cat]) grouped[cat] = [];
-      grouped[cat].push(value.meta.name);
+      (grouped[cat] = grouped[cat] || []).push(value.meta.name);
     }
 
     let msg = `${botName} COMMAND TREE\n\n`;
-
-    for (const [cat, names] of Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (const [cat, names] of Object.entries(grouped).sort()) {
       msg += `📂 ${cat.toUpperCase()}\n`;
-      for (const name of names.sort()) {
-        msg += `  • ${prefix}${name}\n`;
-      }
-      msg += `\n`;
+      for (const name of names.sort()) msg += `  • ${prefix}${name}\n`;
+      msg += "\n";
     }
-    msg += `Total Commands: ${commands.size}`;
+
+    const total = Object.values(grouped).reduce((s, a) => s + a.length, 0);
+    msg += `Total Visible Commands: ${total}`;
 
     return response.reply(msg);
   }
 
-  // ── Paginated command list ───────────────────────────────────────────
-  const perPage    = 8;
-  const page       = parseInt(args[0]) || 1;
-  const arrayInfo  = [];
+  // ── Paginated list ────────────────────────────────────────────────────
+  const perPage  = 10;
+  const page     = parseInt(targetArg) || 1;
+  const arrayInfo = [];
 
   for (const [, value] of commands) {
-    arrayInfo.push({
-      name:        value.meta.name,
-      description: value.meta.description || "No description provided."
-    });
+    if (isCommandVisible(value, senderID, threadID)) {
+      arrayInfo.push({
+        name:        value.meta.name,
+        description: value.meta.description || "No description provided."
+      });
+    }
   }
 
   arrayInfo.sort((a, b) => a.name.localeCompare(b.name));
@@ -115,15 +165,14 @@ export async function onStart({ api, event, args, response }) {
   const slice      = arrayInfo.slice(start, start + perPage);
 
   let msg = `${botName} COMMAND CENTER\n\n`;
-
   for (const { name, description } of slice) {
-    msg += `▫️${prefix}${name}\n`;
-    msg += `   ↳ ${description}\n\n`;
+    msg += `▫️${prefix}${name}\n   ↳ ${description}\n\n`;
   }
-  msg += `Page ${safePage}/${totalPages} | ${commands.size} Commands\n`
-  msg += `Type ${prefix}help <command> for detailed information
-${prefix}help all for complete tree view
-${prefix}help <page number> to navigate pages`;
+  msg +=
+    `Page ${safePage}/${totalPages} | ${arrayInfo.length} Visible Commands\n` +
+    `Type ${prefix}help <command> for detailed info\n` +
+    `${prefix}help all — full tree view\n` +
+    `${prefix}help <page> — navigate pages`;
 
   return response.reply(msg);
 }

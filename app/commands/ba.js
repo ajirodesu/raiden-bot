@@ -2,6 +2,7 @@ import axios from "axios";
 
 export const meta = {
   name: "bluearchive",
+  aliases: ["ba"],
   version: "1.0.0",
   type: "anyone",
   author: "AjiroDesu",
@@ -11,27 +12,17 @@ export const meta = {
   cooldowns: 5
 };
 
-export async function onStart({ api, event }) {
-  const { threadID, messageID } = event;
+export async function onStart({ event, response }) {
   const imageUrl = `${global.endpoint.ajiro}/anime/ba`;
 
   try {
     const imageStream = await axios.get(imageUrl, { responseType: "stream" });
-
-    return api.sendMessage(
-      {
-        body: "💙 Random Blue Archive Image",
-        attachment: imageStream.data
-      },
-      threadID,
-      messageID
-    );
+    return response.reply({
+      body: "💙 Random Blue Archive Image",
+      attachment: imageStream.data
+    });
   } catch (error) {
     console.error("[BA ERROR]", error);
-    return api.sendMessage(
-      "❌ Failed to fetch Blue Archive image. Please try again later.",
-      threadID,
-      messageID
-    );
+    return response.reply("❌ Failed to fetch Blue Archive image. Please try again later.");
   }
 }

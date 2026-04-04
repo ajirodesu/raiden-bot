@@ -2,6 +2,7 @@ import axios from "axios";
 
 export const meta = {
   name: "copilot",
+  aliases: ["ai"],
   version: "1.0.0",
   type: "anyone",
   author: "AjiroDesu",
@@ -14,57 +15,31 @@ export const meta = {
   cooldowns: 5
 };
 
-export async function onStart({ api, event, args }) {
-  const { threadID, messageID } = event;
-
+export async function onStart({ event, args, response, usage }) {
   let prompt = args.join(" ").trim();
 
-  // Support replying to a message (use replied text as prompt)
+  // Support replying to a message — append replied body as context
   if (event.type === "message_reply") {
     const replyBody = event.messageReply?.body?.trim() || "";
-    if (prompt) {
-      prompt = prompt + " " + replyBody;
-    } else {
-      prompt = replyBody;
-    }
+    prompt = prompt ? `${prompt} ${replyBody}` : replyBody;
   }
 
-  if (!prompt) {
-    return api.sendMessage(
-      "❌ Please provide a message after 'copilot' or reply to a message!",
-      threadID,
-      messageID
-    );
-  }
+  if (!prompt) return usage();
 
   try {
-    const response = await axios.get(
-      `${global.endpoint.ajiro}/ai/copilot`,
-      {
-        params: {
-          message: prompt,
-          model: "gpt-5"
-        }
-      }
-    );
+    const { data } = await axios.get(`${global.endpoint.ajiro}/ai/copilot`, {
+      params: { message: prompt, model: "gpt-5" }
+    });
 
-    const data = response.data;
-
-    if (data && data.answer) {
-      return api.sendMessage(data.answer, threadID, messageID);
-    } else {
-      return api.sendMessage(
-        "❌ No response received from the AI.",
-        threadID,
-        messageID
-      );
+    if (data?.answer) {
+      return response.reply(data.answer);
     }
+
+    return response.reply("❌ No response received from the AI.");
   } catch (error) {
     console.error("[COPILOT ERROR]", error);
-    return api.sendMessage(
-      `❌ API Error: ${error.message || "Failed to connect to Ajiro API"}`,
-      threadID,
-      messageID
+    return response.reply(
+      `❌ API Error: ${error.message || "Failed to connect to Ajiro API"}`
     );
   }
 }

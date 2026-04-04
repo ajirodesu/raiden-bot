@@ -1,6 +1,6 @@
 export const meta = {
   name:        'joinNoti',
-  version:     '3.0.0',
+  version:     '3.1.0',
   author:      'AjiroDesu',
   description: 'Sends a welcome message when new members join the group.',
   eventType:   ['log:subscribe'],
@@ -10,7 +10,7 @@ export async function onEvent({ api, event, response }) {
   const { threadID, logMessageData } = event;
   const addedParticipants = logMessageData.addedParticipants || [];
 
-  // ── Bot was added to a new group ───────────────────────────────────────
+  // ── Bot was added to a new group ──────────────────────────────────────
   if (addedParticipants.some(p => p.userFbId === api.getCurrentUserID())) {
     const botName = global.config.BOTNAME || 'Raiden';
     const prefix  = global.config.PREFIX  || '/';
@@ -21,13 +21,12 @@ export async function onEvent({ api, event, response }) {
     );
   }
 
-  // ── Regular members joined ─────────────────────────────────────────────
+  // ── Regular members joined ────────────────────────────────────────────
   try {
     const { threadName, participantIDs } = await api.getThreadInfo(threadID);
     const threadData = global.data.threadData.get(String(threadID)) || {};
 
-    const nameArray  = [];
-    const mentions   = [];
+    const nameArray = [];
 
     for (const participant of addedParticipants) {
       const userID = participant.userFbId;
@@ -38,7 +37,6 @@ export async function onEvent({ api, event, response }) {
         || 'New Member';
 
       nameArray.push(name);
-      mentions.push({ tag: name, id: userID, fromIndex: 0 });
     }
 
     if (!nameArray.length) return;
@@ -58,7 +56,7 @@ export async function onEvent({ api, event, response }) {
       .replace(/\{threadName}/g,  threadName)
       .replace(/\{memberCount}/g, String(memberCount));
 
-    return response.send({ body, mentions }, threadID);
+    return response.send(body, threadID);
   } catch (err) {
     console.error('[joinNoti]', err.message);
   }
