@@ -38,6 +38,8 @@ export default async function createListener({ api, models }) {
       if (t.data?.banned)                global.data.threadBanned.set(id,  { reason: t.data.reason || '', dateAdded: t.data.dateAdded || '' });
       if (t.data?.commandBanned?.length)  global.data.commandBanned.set(id, t.data.commandBanned);
       if (t.data?.NSFW)                   global.data.threadAllowNSFW.push(id);
+      if (t.data?.threadAdminBot)         global.data.threadAdminBot.add(id);
+      if (t.data?.threadPremium)          global.data.threadPremium.add(id);
     }
 
     for (const u of users) {

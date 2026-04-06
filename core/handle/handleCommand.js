@@ -36,28 +36,48 @@ function isCommandVisible(command, senderID, threadID) {
   if (String(m.category || '').toLowerCase() === 'hidden') return false;
 
   const userID    = String(senderID);
+  const tid       = String(threadID);
   const config    = global.config || {};
   const isDev     = Array.isArray(config.ADMINBOT) && config.ADMINBOT.includes(userID);
   const isPremium = Array.isArray(config.PREMIUM)  && config.PREMIUM.includes(userID);
 
+  // Thread-level privilege elevation
+  const isThreadDev     = global.data.threadAdminBot?.has(tid) ?? false;
+  const isThreadPremium = global.data.threadPremium?.has(tid)  ?? false;
+
   let isGroupAdmin = false;
   try {
-    const info = global.data.threadInfo?.get(threadID) || global.data.threadInfo?.get(parseInt(threadID));
+    const info = global.data.threadInfo?.get(tid) || global.data.threadInfo?.get(parseInt(tid));
     if (info?.adminIDs) isGroupAdmin = info.adminIDs.some(a => String(a.id) === userID);
   } catch { /* non-fatal */ }
 
+  const effectiveDev     = isDev     || isThreadDev;
+  const effectivePremium = isPremium || isThreadPremium || effectiveDev;
+
   if (reqType === 'anyone')     return true;
-  if (reqType === 'groupadmin') return isGroupAdmin || isDev;
-  if (reqType === 'premium')    return isPremium    || isDev;
-  if (reqType === 'developer')  return isDev;
+  if (reqType === 'groupadmin') return isGroupAdmin || effectiveDev;
+  if (reqType === 'premium')    return effectivePremium;
+  if (reqType === 'developer')  return effectiveDev;
   return false;
 }
 
-/** Resolve numeric permission level for a user. */
-async function resolvePermission(senderID, threadID, ADMINBOT, Threads) {
+/** Resolve numeric permission level for a user (premium now works exactly like ADMINBOT but at a lower level). */
+async function resolvePermission(senderID, threadID, ADMINBOT, PREMIUM, Threads) {
   senderID = String(senderID);
-  if (ADMINBOT.includes(senderID)) return 3;
-  if (Array.isArray(global.config.PREMIUM) && global.config.PREMIUM.includes(senderID)) return 2;
+  threadID = String(threadID);
+
+  // Individual developer (highest level)
+  if (Array.isArray(ADMINBOT) && ADMINBOT.includes(senderID)) return 3;
+
+  // Thread elevated to developer level → everyone in it gets level 3
+  if (global.data.threadAdminBot?.has(threadID)) return 3;
+
+  // Individual premium (works exactly like ADMINBOT structure but lower level)
+  if (Array.isArray(PREMIUM) && PREMIUM.includes(senderID)) return 2;
+
+  // Thread elevated to premium → everyone in it gets level 2
+  if (global.data.threadPremium?.has(threadID)) return 2;
+
   try {
     const info    = global.data.threadInfo.get(threadID) || await Threads.getInfo(threadID);
     const isAdmin = (info?.adminIDs || []).some(a => String(a.id) === senderID);
@@ -92,7 +112,7 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
 
   return async function ({ event }) {
     const dateNow = Date.now();
-    const { allowInbox, PREFIX, ADMINBOT, DeveloperMode, BOTNAME } = global.config;
+    const { allowInbox, PREFIX, ADMINBOT, PREMIUM, DeveloperMode, BOTNAME } = global.config;
     const { userBanned, threadBanned, threadData, commandBanned }   = global.data;
     const { commands, cooldowns }                                    = global.client;
 
@@ -113,6 +133,19 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
 
     if (!isAIMention && !hasPrefixCmd) return;
 
+    // ── Quick-parse command name (needed for ignore-list checks below) ──
+    // We do a lightweight parse here so DeveloperOnly and OnlyAdminBox
+    // exempt lists can be evaluated before the full command resolution.
+    let quickCmdName = null;
+    if (hasPrefixCmd) {
+      const [qMatch]  = body.match(prefixRegex);
+      const qRaw      = body.slice(qMatch.length).trim().split(/\s+/)[0]?.toLowerCase();
+      if (qRaw) {
+        const qResolved = resolveCommand(qRaw, commands);
+        quickCmdName    = qResolved?.meta?.name || qRaw;
+      }
+    }
+
     // ── Ban checks ──────────────────────────────────────────────────────
     if (!ADMINBOT.includes(senderID)) {
       if (userBanned.has(senderID)) {
@@ -128,9 +161,14 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
     // ── Developer Only mode ──────────────────────────────────────────────
     // When DeveloperOnly is true in config.json, only ADMINBOT members can
     // trigger any command or AI. All others get a silent ⚠️ reaction.
+    // Commands listed in config.DeveloperOnlyIgnore are exempt and remain
+    // usable by everyone (managed via the `ignoreonlydev` command).
     if (global.config.DeveloperOnly && !ADMINBOT.includes(senderID)) {
-      safeReact(api, messageID, '⚠️');
-      return;
+      const devIgnoreList = global.config.DeveloperOnlyIgnore || [];
+      if (!quickCmdName || !devIgnoreList.includes(quickCmdName)) {
+        safeReact(api, messageID, '⚠️');
+        return;
+      }
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -155,10 +193,32 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
       const developerInfo    = `${dev.NAME || 'Unknown'} (ID: ${dev.ID || 'N/A'}, Link: ${dev.LINK || 'N/A'})`;
       const availableCommands = [...commands.keys()].join(', ');
 
+      // ── Current time awareness using global.config.TIMEZONE ─────────────
+      const timezone = global.config.TIMEZONE || 'UTC';
+      let currentTimeStr = 'Unknown';
+      try {
+        const now = new Date();
+        currentTimeStr = now.toLocaleString('en-US', {
+          timeZone: timezone,
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+          timeZoneName: 'short'
+        });
+      } catch {
+        currentTimeStr = new Date().toISOString();
+      }
+
       const systemPrompt =
         `You are a helpful AI assistant inside a Messenger bot named "${botName}".\n` +
         `Developer/owner: ${developerInfo}\n` +
         `Current user: ${userName} (ID: ${senderID})\n` +
+        `Current time (${timezone}): ${currentTimeStr}\n` +
         `Available commands: ${availableCommands}\n\n` +
         `Rules:\n` +
         `- If user ID matches developer ID (${dev.ID || 'N/A'}), be extra friendly and helpful.\n` +
@@ -197,7 +257,7 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
         return executeCommand({
           api, event, models, Users, Threads, Currencies, commands, cooldowns,
           commandName: execCmd, args: execArgs, senderID, threadID, messageID,
-          ADMINBOT, dateNow, DeveloperMode, aiMode: true,
+          ADMINBOT, PREMIUM, dateNow, DeveloperMode, aiMode: true,
         });
       }
 
@@ -252,17 +312,22 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
     // Per-thread setting: when onlyAdminBox is true, only group admins can
     // use the bot in this thread. Non-admins get a ⚠️ reaction (unless
     // onlyAdminBoxNoti is false, in which case the message is silently ignored).
+    // Commands listed in tSetting.ignoreCommandAdminBox are exempt and remain
+    // usable by all members (managed via the `ignoreonlydevbox` command).
     if (event.isGroup && !ADMINBOT.includes(senderID)) {
       const tSetting   = threadData.get(threadID) || {};
       if (tSetting.onlyAdminBox) {
         const tInfo      = global.data.threadInfo.get(threadID) || {};
         const isGrpAdmin = (tInfo.adminIDs || []).some(a => String(a.id) === senderID);
         if (!isGrpAdmin) {
-          // Show ⚠️ reaction by default; suppress it if noti is explicitly false
-          if (tSetting.onlyAdminBoxNoti !== false) {
-            safeReact(api, messageID, '⚠️');
+          const boxIgnoreList = tSetting.ignoreCommandAdminBox || [];
+          if (!boxIgnoreList.includes(meta.name)) {
+            // Show ⚠️ reaction by default; suppress it if noti is explicitly false
+            if (tSetting.onlyAdminBoxNoti !== false) {
+              safeReact(api, messageID, '⚠️');
+            }
+            return;
           }
-          return;
         }
       }
     }
@@ -277,7 +342,7 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
     return executeCommand({
       api, event, models, Users, Threads, Currencies, commands, cooldowns,
       commandName: meta.name, args, senderID, threadID, messageID,
-      ADMINBOT, dateNow, DeveloperMode,
+      ADMINBOT, PREMIUM, dateNow, DeveloperMode,
       commandOverride: command,
     });
   };
@@ -288,7 +353,7 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
 async function executeCommand({
   api, event, models, Users, Threads, Currencies, commands, cooldowns,
   commandName, args, senderID, threadID, messageID,
-  ADMINBOT, dateNow, DeveloperMode,
+  ADMINBOT, PREMIUM, dateNow, DeveloperMode,
   commandOverride = null, aiMode = false,
 }) {
   const command = commandOverride || resolveCommand(commandName, commands);
@@ -313,7 +378,7 @@ async function executeCommand({
     );
   }
 
-  const userPerm = await resolvePermission(senderID, threadID, ADMINBOT, Threads);
+  const userPerm = await resolvePermission(senderID, threadID, ADMINBOT, PREMIUM, Threads);
 
   if (!cooldowns.has(meta.name)) cooldowns.set(meta.name, new Map());
   const timestamps     = cooldowns.get(meta.name);

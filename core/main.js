@@ -77,6 +77,10 @@ global.data = {
   allUserID:       [],
   allCurrenciesID: [],
   allThreadID:     [],
+  // Thread-level privilege elevation:
+  // Any member messaging from these threads inherits the corresponding permission tier.
+  threadAdminBot:  new Set(), // threadIDs that have developer/adminbot-level access
+  threadPremium:   new Set(), // threadIDs that have premium-level access
 };
 
 global.config = {};

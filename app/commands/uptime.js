@@ -5,7 +5,7 @@ export const meta = {
   type:        'anyone',       // anyone | groupadmin | premium | developer
   author:      'AjiroDesu',
   description: 'Check how long the bot has been running (uptime).',
-  category:    'utility',
+  category:    'system',
   guide:       [''],
   cooldowns:   5,
 };

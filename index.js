@@ -113,11 +113,14 @@ app.get('/api/stats', async (_req, res) => {
     const commands = scanDir(join(__dirname, 'app/commands'), 'command');
     const events   = scanDir(join(__dirname, 'app/events'),   'event');
     const db       = await getDbStats();
-    const uptime   = Date.now() - botStartedAt;
+    // FIX: uptimeMs is the canonical field name the frontend reads.
+    // Computed fresh on every request so page refreshes always get the
+    // real elapsed time since the bot last started — no stale value.
+    const uptimeMs = Date.now() - botStartedAt;
     res.json({
       status:    botStatus,
-      uptime,
-      uptimeStr: formatUptime(uptime),
+      uptimeMs,                        // ← was "uptime"; frontend reads "uptimeMs"
+      uptimeStr: formatUptime(uptimeMs),
       botName:   cfg.BOTNAME || 'Raiden',
       prefix:    cfg.PREFIX  || '+',
       stats:     { commands: commands.length, events: events.length, threads: db.threads, users: db.users },
@@ -139,7 +142,7 @@ let   restartCount = 0;
 function startBot(msg) {
   if (msg) logger(msg, 'RAIDEN');
   botStatus    = 'starting';
-  botStartedAt = Date.now();
+  botStartedAt = Date.now();   // ← reset clock on every (re)start
 
   const child = spawn('node',
     ['--trace-warnings', '--async-stack-traces', 'core/main.js'],

@@ -11,7 +11,7 @@ export const meta = {
   type:        'groupadmin',
   author:      'Mirai Team | Converted by AjiroDesu',
   description: 'Remove tagged members from the group.',
-  category:    'system',
+  category:    'group',
   guide:       ['@mention'],
   cooldowns:   0,
 };

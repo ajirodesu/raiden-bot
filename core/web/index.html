@@ -14,9 +14,13 @@
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-/* FIX: Changed to natural page scrolling instead of forced hidden overflow */
 html, body { min-height: 100%; overflow-x: hidden; background: var(--bg); }
 body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body.modal-open {
+  overflow: hidden !important;
+  touch-action: none;
+}
 
 :root {
   --bg: #080810; --surface: rgba(20, 20, 36, 0.85); --surface2: rgba(30, 30, 50, 0.75);
@@ -31,14 +35,12 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
   --font-mono: 'SF Mono', 'Menlo', 'Monaco', Courier, monospace;
 }
 
-/* FIX: Utilizing 100dvh for mobile support, allowing body to handle scrolling */
 #app { min-height: 100dvh; display: flex; flex-direction: column; font-family: var(--font); color: var(--text); position: relative; width: 100%; }
 
 .orb { position: fixed; border-radius: 50%; filter: blur(90px); pointer-events: none; z-index: 0; }
 .orb1 { width: 400px; height: 400px; background: radial-gradient(circle, rgba(255,45,85,0.15), transparent 70%); top: -100px; right: -80px; }
 .orb2 { width: 320px; height: 320px; background: radial-gradient(circle, rgba(191,90,242,0.12), transparent 70%); bottom: 40px; left: -80px; }
 
-/* FIX: Sticky header so it stays accessible when scrolling down */
 #header { position: sticky; top: 0; flex-shrink: 0; padding: env(safe-area-inset-top, 0px) 20px 0; background: rgba(8, 8, 16, 0.75); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border-bottom: 1px solid var(--border); z-index: 100; }
 .header-inner { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; gap: 12px; }
 .header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
@@ -78,7 +80,7 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .seg-btn:hover { color: var(--text); }
 .seg-btn.active { background: var(--grad); color: #fff; box-shadow: 0 2px 12px rgba(191,90,242,.3); }
 
-/* Content Area - FIX: Let natural flow happen, removed rigid overflow constraints */
+/* Content Area */
 #content { flex: 1; padding: 0 20px 40px; z-index: 1; width: 100%; max-width: 100%; }
 .panel { display: none; animation: fadeIn 0.3s ease; }
 .panel.active { display: block; }
@@ -123,11 +125,9 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 .cfg-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); gap: 14px; }
 .cfg-row:last-child { border-bottom: none; }
 .cfg-key { font-size: 14px; font-weight: 600; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* FIX: Better overflow wrapping for config values */
 .cfg-val { font-size: 13px; color: var(--text2); font-family: var(--font-mono); text-align: right; overflow-wrap: anywhere; word-break: break-word; max-width: 60%; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
 .cfg-val.array { color: var(--purple); background: rgba(191,90,242,0.1); border-color: rgba(191,90,242,0.2); }
 
-/* Config boolean badge (replaces toggles) */
 .cfg-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; flex-shrink: 0; }
 .cfg-badge.on  { background: rgba(48,209,88,.15);  color: var(--green);  border: 1px solid rgba(48,209,88,.25); }
 .cfg-badge.off { background: rgba(255,69,58,.12);  color: var(--red);    border: 1px solid rgba(255,69,58,.2); }
@@ -348,8 +348,19 @@ body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; 
 
 <script>
 let D = null, activeTab = 'overview', activeCat = 'all', rfTimer = null;
-let _uptimeBase = 0, _uptimeFetchedAt = 0, _uptimeTicker = null, _prefix = '+', _botName = 'Raiden';
+let _prefix = '+', _botName = 'Raiden';
 let _allCmds = [], _allEvts = [];
+
+// ── Uptime state ─────────────────────────────────────────────────────────
+// _uptimeBase:      the uptimeMs value returned by the server on last fetch
+// _uptimeFetchedAt: the local timestamp (Date.now()) when that fetch landed
+// Together these let the ticker extrapolate the live uptime without extra
+// network calls: liveUptime = _uptimeBase + (Date.now() - _uptimeFetchedAt)
+// On every page load the first fetch re-syncs _uptimeBase from the server,
+// so refreshing the page always picks up the real server-side elapsed time.
+let _uptimeBase      = 0;
+let _uptimeFetchedAt = 0;
+let _uptimeTicker    = null;
 
 /* ── Utilities ─────────────────────────────────────────────────────────── */
 function esc(s) {
@@ -368,7 +379,12 @@ function fmtUptime(ms) {
   return p.join(' ');
 }
 
-/* ── Live uptime ticker (updates every second, no API call needed) ──────── */
+/* ── Live uptime ticker ──────────────────────────────────────────────────
+   Runs every second. Uses the server-supplied base + local elapsed time
+   so the display stays accurate without polling the API every second.
+   On page refresh, _uptimeBase is reloaded from the server on the first
+   fetchStats() call, so the counter always resumes from the correct value.
+── */
 function startUptimeTicker() {
   if (_uptimeTicker) clearInterval(_uptimeTicker);
   _uptimeTicker = setInterval(() => {
@@ -390,7 +406,7 @@ function toast(icon, msg) {
 }
 
 /* ── Modal ──────────────────────────────────────────────────────────────── */
-const overlay   = document.getElementById('modal-overlay');
+const overlay    = document.getElementById('modal-overlay');
 const modalClose = document.getElementById('modal-close');
 
 function openModal(item, kind) {
@@ -460,18 +476,17 @@ function openModal(item, kind) {
   }
 
   overlay.classList.add('open');
-  document.body.style.overflow = 'hidden';
+  document.body.classList.add('modal-open');
 }
 
 function closeModal() {
   overlay.classList.remove('open');
-  document.body.style.overflow = '';
+  document.body.classList.remove('modal-open');
 }
 
 modalClose.addEventListener('click', closeModal);
 overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-
 
 document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
   if (activeTab === b.dataset.tab) return;
@@ -499,9 +514,14 @@ async function fetchStats(manual) {
     const r = await fetch('/api/stats');
     if (!r.ok) throw new Error('HTTP ' + r.status);
     D = await r.json();
-    /* Sync uptime base so the live ticker starts from the right value */
+
+    // FIX: Server now sends "uptimeMs" (was "uptime").
+    // Record the server's elapsed ms and the local clock at fetch time.
+    // The ticker extrapolates forward from here — no API call needed per second,
+    // and a page refresh always re-syncs from the authoritative server value.
     _uptimeBase      = D.uptimeMs ?? 0;
     _uptimeFetchedAt = Date.now();
+
     render(D);
     if (manual) toast('ph-check-circle', 'Dashboard Updated');
   } catch (e) {
@@ -511,7 +531,7 @@ async function fetchStats(manual) {
   }
 }
 
-/* ── Icon map (category → Phosphor icon class) ──────────────────────────── */
+/* ── Icon map ───────────────────────────────────────────────────────────── */
 const ICONS = {
   system: 'ph-robot', economy: 'ph-coins', utility: 'ph-wrench', group: 'ph-users-three',
   owner: 'ph-key', config: 'ph-gear', 'contacts admin': 'ph-envelope-simple', fun: 'ph-confetti',
@@ -531,25 +551,21 @@ function render(d) {
   document.getElementById('hdr-name').textContent = _botName;
   document.title = `${_botName} — Dashboard`;
 
-  /* Status pill */
   const dot = document.getElementById('status-dot');
   const st  = d.status || 'starting';
   dot.className = 'status-dot ' + st;
   document.getElementById('status-text').textContent = st.charAt(0).toUpperCase() + st.slice(1);
 
-  /* Stats counters — all come from API, always reflect real file counts */
   const s = d.stats || {};
   document.getElementById('sc-cmds').textContent    = s.commands ?? '—';
   document.getElementById('sc-evts').textContent    = s.events   ?? '—';
   document.getElementById('sc-threads').textContent = s.threads  ?? '—';
   document.getElementById('sc-users').textContent   = s.users    ?? '—';
 
-  /* Overview cards */
   document.getElementById('ov-prefix').textContent = _prefix;
   document.getElementById('ov-name').textContent   = _botName;
   document.getElementById('ov-tz').textContent     = d.config?.TIMEZONE || '—';
 
-  /* Developer card */
   const dev   = d.config?.DEVELOPER;
   const devEl = document.getElementById('ov-dev');
   devEl.innerHTML = dev?.NAME
@@ -562,7 +578,6 @@ function render(d) {
        </div>`
     : '<span style="font-size:13px;color:var(--text3)">Not configured</span>';
 
-  /* Feature flags — boolean values shown as plain on/off badges */
   const cfg     = d.config || {};
   const flagsEl = document.getElementById('ov-flags');
   flagsEl.innerHTML = BOOL_KEYS.filter(k => cfg[k] !== undefined).map(k => {
@@ -575,7 +590,6 @@ function render(d) {
             </div>`;
   }).join('');
 
-  /* All panels are data-driven — no manual entries */
   renderCmds(d.commands || []);
   renderEvts(d.events   || []);
   renderCfg(cfg, d);
@@ -626,7 +640,6 @@ function renderCmds(cmds) {
     </div>`;
   }).join('');
 
-  /* Wire click — use the filtered array for correct index mapping */
   lEl.querySelectorAll('.list-item[data-kind="command"]').forEach((el, i) => {
     el.addEventListener('click', () => openModal(filtered[i], 'command'));
   });
@@ -676,7 +689,6 @@ function renderCfg(cfg, d) {
 
   html += '<div class="section-header" style="margin-top:20px"><span class="section-title">Settings</span></div><div class="card">';
 
-  /* Dynamically render every config key — booleans get badges, arrays get pill lists, strings get mono chips */
   Object.entries(cfg).filter(([k]) => !SKIP.includes(k) && k !== 'DEVELOPER').forEach(([k, v]) => {
     if (BOOL_KEYS.includes(k)) {
       const on = !!v;

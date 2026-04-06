@@ -5,7 +5,7 @@ export const meta = {
   type:        'groupadmin',
   author:      'DungUwU (Khánh Milo Fix) | Converted by AjiroDesu',
   description: 'Toggle antiout protection — re-adds members who try to leave.',
-  category:    'system',
+  category:    'group',
   guide:       ['on', 'off'],
   cooldowns:   0,
 };
