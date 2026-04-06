@@ -1,6 +1,6 @@
 export const meta = {
   name: "help",
-  version: "1.0.7",
+  version: "1.0.10",
   type: "anyone",
   author: "AjiroDesu",
   description: "Beginner's Guide — lists all commands or shows details about a specific command.",
@@ -10,6 +10,56 @@ export const meta = {
   autoUnsend: false,
   delayUnsend: 20
 };
+
+// ── PURE DYNAMIC EMOJI API (EmojisWorld - 100% API only) ───────────────────
+// Endpoint: https://api.emojisworld.fr/v1/search?q=KEYWORD&limit=1
+// Completely API-driven. No fallbacks, no overrides, no pools.
+// Supports ANY meta.category keyword (system, fun, ai, xp, custom123, etc.)
+// Uses meta.name + meta.category for command details (maximum accuracy)
+// Uses meta.category only for tree view (consistent per category)
+
+const EMOJI_API_BASE = "https://api.emojisworld.fr/v1/search";
+
+let emojiCache = new Map(); // Global cache — same keyword always gets same emoji
+
+// ── Pure API Emoji Fetcher (no fallback functions) ────────────────────────
+async function getCategoryEmoji(category, commandName = null) {
+  if (!category) return "📦";
+
+  // Smart cache key: name+category for details, category only for tree
+  const cacheKey = commandName
+    ? `${String(commandName).toLowerCase().trim()}-${String(category).toLowerCase().trim()}`
+    : String(category).toLowerCase().trim();
+
+  if (emojiCache.has(cacheKey)) return emojiCache.get(cacheKey);
+
+  try {
+    // Search term = meta.name + meta.category (for accurate emoji in details)
+    const searchTerm = commandName
+      ? `${commandName} ${category}`
+      : category;
+
+    const url = `${EMOJI_API_BASE}?q=${encodeURIComponent(searchTerm)}&limit=1`;
+    const response = await fetch(url);
+
+    if (!response.ok) throw new Error("API error");
+
+    const data = await response.json();
+
+    if (Array.isArray(data) && data.length > 0 && data[0].emoji) {
+      const emoji = data[0].emoji;
+      emojiCache.set(cacheKey, emoji);
+      return emoji;
+    }
+  } catch (err) {
+    // API unreachable or no results → neutral safe emoji (pure API mode)
+  }
+
+  // Only neutral default when API truly cannot provide (rare)
+  const neutral = "📦";
+  emojiCache.set(cacheKey, neutral);
+  return neutral;
+}
 
 // ── Resolve command by name OR alias ─────────────────────────────────────
 function resolveCommand(target, commands) {
@@ -56,8 +106,8 @@ function isCommandVisible(command, senderID, threadID) {
   return false;
 }
 
-// ── Command detail block ──────────────────────────────────────────────────
-function buildCommandInfo(command, prefix) {
+// ── Command detail block (pure API + name+category) ───────────────────────
+async function buildCommandInfo(command, prefix) {
   const m = command.meta || {};
 
   const aliasesList = Array.isArray(m.aliases) && m.aliases.length
@@ -69,11 +119,13 @@ function buildCommandInfo(command, prefix) {
     .map(g => g ? `${prefix}${m.name} ${g}` : `${prefix}${m.name}`)
     .join("\n");
 
+  const catEmoji = await getCategoryEmoji(m.category, m.name);
+
   return (
-    `🛠️ COMMAND INTERFACE\n\n` +
+    `${catEmoji} COMMAND INTERFACE\n\n` +
     `▫️ Name: ${m.name}\n` +
     `▫️ Version: v${m.version || "1.0.0"}\n` +
-    `▫️ Category: ${(m.category || "OTHER").toUpperCase()}\n` +
+    `▫️ ${catEmoji} ${(m.category || "OTHER").toUpperCase()}\n` +
     `▫️ Type: ${(m.type || "anyone").toUpperCase()}\n` +
     `▫️ Cooldown: ${m.cooldowns || 0}s\n` +
     `▫️ Aliases: ${aliasesList}\n\n` +
@@ -100,7 +152,8 @@ export async function onEvent({ event, response }) {
     ? threadSetting.PREFIX
     : global.config.PREFIX;
 
-  return response.reply(buildCommandInfo(command, prefix));
+  const info = await buildCommandInfo(command, prefix);
+  return response.reply(info);
 }
 
 // ── Main command ──────────────────────────────────────────────────────────
@@ -118,7 +171,10 @@ export async function onStart({ event, args, response }) {
   // ── Specific command info ─────────────────────────────────────────────
   if (targetArg && targetArg !== "all" && isNaN(Number(targetArg))) {
     const command = resolveCommand(targetArg, commands);
-    if (command) return response.reply(buildCommandInfo(command, prefix));
+    if (command) {
+      const info = await buildCommandInfo(command, prefix);
+      return response.reply(info);
+    }
   }
 
   // ── Full tree view ────────────────────────────────────────────────────
@@ -131,11 +187,19 @@ export async function onStart({ event, args, response }) {
     }
 
     let msg = `${botName} COMMAND TREE\n\n`;
-    for (const [cat, names] of Object.entries(grouped).sort()) {
-      msg += `📂 ${cat.toUpperCase()}\n`;
-      for (const name of names.sort()) msg += `  • ${prefix}${name}\n`;
-      msg += "\n";
-    }
+
+    // Pure API calls in parallel
+    const catEntries = Object.entries(grouped).sort();
+    const catPromises = catEntries.map(async ([cat, names]) => {
+      const emoji = await getCategoryEmoji(cat); // category only → consistent
+      let block = `${emoji} ${cat.toUpperCase()}\n`;
+      for (const name of names.sort()) block += ` ▫️ ${prefix}${name}\n`;
+      block += "\n";
+      return block;
+    });
+
+    const catBlocks = await Promise.all(catPromises);
+    msg += catBlocks.join("");
 
     const total = Object.values(grouped).reduce((s, a) => s + a.length, 0);
     msg += `Total Visible Commands: ${total}`;

@@ -86,6 +86,21 @@ export default async function createListener({ api, models }) {
         _handleEvent({ event });
         break;
       case 'message_reaction':
+        // ── Auto-Reaction: mirror the user's reaction on the same message ──
+        // Enabled by default; set autoReaction: false in config.json to disable.
+        if (global.config.autoReaction !== false) {
+          const botID = String(api.getCurrentUserID());
+          if (
+            event.senderID &&
+            String(event.senderID) !== botID &&
+            event.action === 'react' &&
+            event.reaction
+          ) {
+            try {
+              api.setMessageReaction(event.reaction, event.messageID, () => {}, true);
+            } catch { /* ignore */ }
+          }
+        }
         _handleReaction({ event });
         break;
       default:

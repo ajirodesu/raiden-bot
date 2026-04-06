@@ -15,5 +15,11 @@ export default function ThreadsModel({ sequelize, Sequelize }) {
     data: {
       type: Sequelize.JSON,
     },
+    // Dedicated column for per-group custom prefix (null = use global)
+    prefix: {
+      type:         Sequelize.STRING(10),
+      defaultValue: null,
+      allowNull:    true,
+    },
   });
 }

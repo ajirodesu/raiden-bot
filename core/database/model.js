@@ -13,7 +13,7 @@ export default function buildModels(input) {
   const Currencies = CurrenciesModel(input);
 
   Users.sync({ force: false });
-  Threads.sync({ force: false });
+  Threads.sync({ force: false, alter: true }); // alter adds new columns to existing DB
   Currencies.sync({ force: false });
 
   return {

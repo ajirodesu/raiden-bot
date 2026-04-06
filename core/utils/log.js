@@ -56,6 +56,28 @@ const EMOJI_RE = /[\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D]/
 const UPDATE_RE = /\b(?:update|updat(?:e|ing)|checking|version|release|changelog|patch)\b/i;
 const STATUS_RE = /\b(?:up to date|connected|login successful|logged as|online|reconnect|restart interval|maintained|enhanced|mqtt)\b/i;
 
+// Lines matching any of these patterns are silently dropped — they are internal
+// noise from stfca, bluebird, the legacy `request` package, and Node.js
+// deprecation warnings that add no value to the operator.
+const NOISE_PATTERNS = [
+  /node_modules[/\\]bluebird/i,
+  /node_modules[/\\]request/i,
+  /node_modules[/\\]stfca/i,
+  /node_modules[/\\]form-data/i,
+  /\bpromisif(?:y|ied)\b/i,
+  /\bFormData\.append\b/i,
+  /\bappendFormValue\b/i,
+  /\bpostFormData(?:WithDefault)?\b/i,
+  /\bRequest\.init\b/i,
+  /\bnew Request\b/i,
+  /\[DEP\d{4}\]/,
+  /DeprecationWarning/i,
+  /util\.isArray/i,
+  /Array\.isArray\(\)/i,
+  /at promisified/i,
+  /at Object\.setMessageReaction/i,
+];
+
 function getRawLog() {
   return typeof globalThis.__rawConsoleLog === 'function'
     ? globalThis.__rawConsoleLog
@@ -150,7 +172,7 @@ logger.external = function (message, tag = 'RAIDEN') {
   const lines = text
     .split(/[\r\n]+/)
     .map(cleanExternalText)
-    .filter(Boolean);
+    .filter(line => line && !NOISE_PATTERNS.some(re => re.test(line)));
 
   if (!lines.length) {
     getRawLog()('');

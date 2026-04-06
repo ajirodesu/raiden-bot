@@ -1,51 +1,28 @@
 export const meta = {
-  name:        'uptime',
-  aliases:     ['up'],
+  name:        'uid',
+  aliases:     ['id', 'getid'],
   version:     '1.0.0',
-  type:        'anyone',       // anyone | groupadmin | premium | developer
+  type:        'anyone',
   author:      'AjiroDesu',
-  description: 'Check how long the bot has been running (uptime).',
+  description: 'Get the Facebook user ID of yourself or a tagged person.',
   category:    'utility',
-  guide:       [''],
+  guide:       ['', '@mention'],
   cooldowns:   5,
 };
 
-export async function onStart({ api, event, response }) {
-  const { senderID } = event;
+export async function onStart({ event, response }) {
+  const { senderID, mentions } = event;
 
-  // ── Get actual user name using stfca (the Facebook Chat API client) ─────
-  let userName = 'Master'; // fallback
-  try {
-    const userInfo = await new Promise((resolve) => {
-      api.getUserInfo(senderID, (err, data) => {
-        resolve(err || !data?.[senderID] ? {} : data[senderID]);
-      });
-    });
-    if (userInfo?.name) userName = userInfo.name;
-  } catch (e) {
-    // silent fallback
+  const mentionIDs = Object.keys(mentions || {});
+
+  if (!mentionIDs.length) {
+    return response.reply(`🔖 Your User ID: ${senderID}`);
   }
 
-  // ── Calculate uptime ───────────────────────────────────────────────────
-  const uptimeSeconds = process.uptime();
+  const lines = mentionIDs.map(id => {
+    const name = (mentions[id] || '').replace(/@/g, '').trim() || `User ${id}`;
+    return `🔖 ${name}: ${id}`;
+  });
 
-  const days    = Math.floor(uptimeSeconds / 86400);
-  const hours   = Math.floor((uptimeSeconds % 86400) / 3600);
-  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-  const seconds = Math.floor(uptimeSeconds % 60);
-
-  const parts = [];
-  if (days > 0)    parts.push(`${days} day${days !== 1 ? 's' : ''}`);
-  if (hours > 0)   parts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
-  if (minutes > 0) parts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
-  if (seconds > 0 || parts.length === 0) 
-    parts.push(`${seconds} second${seconds !== 1 ? 's' : ''}`);
-
-  const timeString = parts.length > 1
-    ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]
-    : parts[0] || '0 seconds';
-
-  const message = `Greetings Master ${userName}, I've been running for ${timeString}.`;
-
-  return response.reply(message);
+  return response.reply(lines.join('\n'));
 }

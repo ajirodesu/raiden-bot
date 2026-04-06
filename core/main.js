@@ -33,6 +33,19 @@ const login = require('stfca');
   console.error = routeExternal();
 }
 
+// ── Suppress noisy Node.js / stfca deprecation warnings ──────────────────
+process.removeAllListeners('warning');
+process.on('warning', (warning) => {
+  // Silently drop DEP warnings originating from node_modules (stfca, bluebird, request)
+  const stack = warning.stack || '';
+  if (
+    warning.name === 'DeprecationWarning' &&
+    (stack.includes('node_modules') || !stack)
+  ) return;
+  // Pass through any other warnings normally
+  logger(`[${warning.name}] ${warning.message}`, 'WARN');
+});
+
 // ── Boot Log ──────────────────────────────────────────────────────────────
 logger('Activating the Engine Protocols', 'RAIDEN');
 
@@ -152,6 +165,10 @@ async function loadModules(dir, map, type) {
       if (isCommand) {
         if (typeof mod.onStart !== 'function') throw new Error('Missing onStart');
         map.set(mod.meta.name, mod);
+        // Register commands that also listen to events (e.g. rankup, help)
+        if (typeof mod.onEvent === 'function') {
+          global.client.eventRegistered.push(mod.meta.name);
+        }
       } else {
         if (typeof mod.onEvent !== 'function') throw new Error('Missing onEvent');
         map.set(mod.meta.name, mod);

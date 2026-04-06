@@ -1,5 +1,6 @@
 {
     "DeveloperMode": false,
+    "DeveloperOnly": false,
     "autoCreateDB": true,
     "allowInbox": true,
     "autoClean": false,

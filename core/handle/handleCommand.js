@@ -6,64 +6,95 @@ import { Groq }            from 'groq-sdk';
 const require          = createRequire(import.meta.url);
 const stringSimilarity = require('string-similarity');
 
-const PERMISSION_LEVEL = {
-  anyone:     0,
-  groupadmin: 1,
-  premium:    2,
-  developer:  3,
-};
-
+const PERMISSION_LEVEL = { anyone: 0, groupadmin: 1, premium: 2, developer: 3 };
 const PERMISSION_LABEL = ['anyone', 'group admin', 'premium user', 'developer'];
+
+// ── Shared helpers ────────────────────────────────────────────────────────
 
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// ── Command visibility / permission check (synced with help.js) ───────
+/**
+ * Resolve a command by exact name or alias from the commands Map.
+ * Returns the command object or null.
+ */
+function resolveCommand(name, commands) {
+  const cmd = commands.get(name);
+  if (cmd) return cmd;
+  for (const [, c] of commands) {
+    if ((c.meta?.aliases || []).some(a => String(a).toLowerCase() === name)) return c;
+  }
+  return null;
+}
+
+/** Check whether a command is accessible to the given user in the given thread. */
 function isCommandVisible(command, senderID, threadID) {
-  const m = command.meta || {};
+  const m       = command.meta || {};
+  const reqType = (m.type || 'anyone').toLowerCase();
+
   if (String(m.category || '').toLowerCase() === 'hidden') return false;
 
-  const reqType = (m.type || 'anyone').toLowerCase();
-  const userID  = String(senderID);
-  const config  = global.config || {};
-
+  const userID    = String(senderID);
+  const config    = global.config || {};
   const isDev     = Array.isArray(config.ADMINBOT) && config.ADMINBOT.includes(userID);
-  const isPremium = Array.isArray(config.PREMIUM) && config.PREMIUM.includes(userID);
+  const isPremium = Array.isArray(config.PREMIUM)  && config.PREMIUM.includes(userID);
 
   let isGroupAdmin = false;
   try {
-    const tID = parseInt(threadID);
-    const info = global.data.threadInfo?.get(tID) || global.data.threadInfo?.get(threadID);
-    if (info && Array.isArray(info.adminIDs)) {
-      isGroupAdmin = info.adminIDs.some(a => String(a.id) === userID);
-    }
-  } catch {}
+    const info = global.data.threadInfo?.get(threadID) || global.data.threadInfo?.get(parseInt(threadID));
+    if (info?.adminIDs) isGroupAdmin = info.adminIDs.some(a => String(a.id) === userID);
+  } catch { /* non-fatal */ }
 
   if (reqType === 'anyone')     return true;
   if (reqType === 'groupadmin') return isGroupAdmin || isDev;
-  if (reqType === 'premium')    return isPremium || isDev;
+  if (reqType === 'premium')    return isPremium    || isDev;
   if (reqType === 'developer')  return isDev;
-
   return false;
 }
 
-/**
- * Handles incoming messages.
- *  - Bot name mentioned anywhere  → Groq AI mode (no prefix needed)
- *  - Prefix at start              → Normal command mode
- */
-export default function handleCommand({ api, models, Users, Threads, Currencies }) {
+/** Resolve numeric permission level for a user. */
+async function resolvePermission(senderID, threadID, ADMINBOT, Threads) {
+  senderID = String(senderID);
+  if (ADMINBOT.includes(senderID)) return 3;
+  if (Array.isArray(global.config.PREMIUM) && global.config.PREMIUM.includes(senderID)) return 2;
+  try {
+    const info    = global.data.threadInfo.get(threadID) || await Threads.getInfo(threadID);
+    const isAdmin = (info?.adminIDs || []).some(a => String(a.id) === senderID);
+    return isAdmin ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
 
-  // ── Groq AI client (lazy-init) ────────────────────────────────────────
+/** Send a temporary ban/restriction notice that auto-unsends after 5 s. */
+async function bannedReply(api, text, threadID, messageID) {
+  api.sendMessage(text, threadID, async (err, info) => {
+    if (!err) {
+      await new Promise(r => setTimeout(r, 5000));
+      api.unsendMessage(info.messageID);
+    }
+  }, messageID);
+}
+
+/** Helper — safely set a message reaction (fire-and-forget). */
+function safeReact(api, messageID, emoji) {
+  try {
+    api.setMessageReaction(emoji, messageID, () => {}, true);
+  } catch { /* ignore */ }
+}
+
+// ── handleCommand factory ─────────────────────────────────────────────────
+
+export default function handleCommand({ api, models, Users, Threads, Currencies }) {
   const groqApiKey = global.config.GROQ_API_KEY || process.env.GROQ_API_KEY;
   const groqClient = groqApiKey ? new Groq({ apiKey: groqApiKey }) : null;
 
   return async function ({ event }) {
     const dateNow = Date.now();
     const { allowInbox, PREFIX, ADMINBOT, DeveloperMode, BOTNAME } = global.config;
-    const { userBanned, threadBanned, threadData, commandBanned }  = global.data;
-    const { commands, cooldowns }                                   = global.client;
+    const { userBanned, threadBanned, threadData, commandBanned }   = global.data;
+    const { commands, cooldowns }                                    = global.client;
 
     let { body, senderID, threadID, messageID } = event;
     senderID = String(senderID);
@@ -72,11 +103,9 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
     if (!body) return;
     if (!allowInbox && senderID === threadID) return;
 
-    // ── AI trigger (bot name mention, no prefix required) ────────────────
-    const botName      = BOTNAME || 'Raiden';
-    const isAIMention  = body.toLowerCase().includes(botName.toLowerCase());
+    const botName     = BOTNAME || 'Raiden';
+    const isAIMention = body.toLowerCase().includes(botName.toLowerCase());
 
-    // ── Prefix detection ─────────────────────────────────────────────────
     const threadSetting = threadData.get(threadID) || {};
     const activePrefix  = threadSetting.PREFIX || PREFIX;
     const prefixRegex   = new RegExp(`^(<@!?${senderID}>|${escapeRegex(activePrefix)})\\s*`);
@@ -84,16 +113,24 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
 
     if (!isAIMention && !hasPrefixCmd) return;
 
-    // ── Universal ban checks ─────────────────────────────────────────────
+    // ── Ban checks ──────────────────────────────────────────────────────
     if (!ADMINBOT.includes(senderID)) {
       if (userBanned.has(senderID)) {
         const { reason, dateAdded } = userBanned.get(senderID);
-        return _bannedReply(api, `❌ You are banned.\nReason: ${reason}\nDate: ${dateAdded}`, threadID, messageID);
+        return bannedReply(api, `🔴 You are banned.\nReason: ${reason}\nDate: ${dateAdded}`, threadID, messageID);
       }
       if (threadBanned.has(threadID)) {
         const { reason, dateAdded } = threadBanned.get(threadID);
-        return _bannedReply(api, `❌ This group is banned.\nReason: ${reason}\nDate: ${dateAdded}`, threadID, messageID);
+        return bannedReply(api, `🔴 This group is banned.\nReason: ${reason}\nDate: ${dateAdded}`, threadID, messageID);
       }
+    }
+
+    // ── Developer Only mode ──────────────────────────────────────────────
+    // When DeveloperOnly is true in config.json, only ADMINBOT members can
+    // trigger any command or AI. All others get a silent ⚠️ reaction.
+    if (global.config.DeveloperOnly && !ADMINBOT.includes(senderID)) {
+      safeReact(api, messageID, '⚠️');
+      return;
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -101,31 +138,32 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
     // ════════════════════════════════════════════════════════════════════
     if (isAIMention) {
       if (!groqClient) {
-        return api.sendMessage('❌ AI is not configured (missing GROQ_API_KEY).', threadID, messageID);
+        return api.sendMessage('🔴 AI is not configured (missing GROQ_API_KEY).', threadID, messageID);
       }
+
+      safeReact(api, messageID, '⏳');
 
       let userName = `User ${senderID}`;
       try {
-        const userInfo = await new Promise((res) => {
+        const userInfo = await new Promise(res => {
           api.getUserInfo(senderID, (err, data) => res(err || !data?.[senderID] ? {} : data[senderID]));
         });
-        if (userInfo.name) userName = userInfo.name;
-      } catch {}
+        if (userInfo?.name) userName = userInfo.name;
+      } catch { /* fallback */ }
 
       const dev = global.config.DEVELOPER || {};
-      const developerInfo = `${dev.NAME || 'Unknown'} (ID: ${dev.ID || 'N/A'}, Link: ${dev.LINK || 'N/A'})`;
-
+      const developerInfo    = `${dev.NAME || 'Unknown'} (ID: ${dev.ID || 'N/A'}, Link: ${dev.LINK || 'N/A'})`;
       const availableCommands = [...commands.keys()].join(', ');
 
       const systemPrompt =
         `You are a helpful AI assistant inside a Messenger bot named "${botName}".\n` +
-        `Your developer / creator / owner is: ${developerInfo}\n` +
+        `Developer/owner: ${developerInfo}\n` +
         `Current user: ${userName} (ID: ${senderID})\n` +
         `Available commands: ${availableCommands}\n\n` +
         `Rules:\n` +
-        `- If the current user ID exactly matches your developer's ID (${dev.ID || 'N/A'}), you are talking to your own developer. Be extra friendly, respectful, and helpful.\n` +
-        `- If the user asks about your developer, creator, owner, who made you, or who owns the bot, always answer using the exact information above.\n` +
-        `- If the user asks to run a bot command, respond ONLY with valid JSON:\n` +
+        `- If user ID matches developer ID (${dev.ID || 'N/A'}), be extra friendly and helpful.\n` +
+        `- When asked about your developer/owner, always use the exact info above.\n` +
+        `- To run a bot command, respond ONLY with valid JSON:\n` +
         `  {"action":"execute_command","commandName":"exact_name","args":["arg1"]}\n` +
         `- Otherwise, reply naturally and helpfully.`;
 
@@ -140,9 +178,11 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
         aiText = completion.choices[0]?.message?.content?.trim() || "Sorry, I couldn't generate a response.";
       } catch (aiErr) {
         logger.error(`Groq API: ${aiErr.message}`);
-        return api.sendMessage('❌ AI service temporarily unavailable.', threadID, messageID);
+        safeReact(api, messageID, '🔴');
+        return api.sendMessage('🔴 AI service temporarily unavailable.', threadID, messageID);
       }
 
+      // Check if AI wants to execute a command
       const cleaned = aiText.replace(/```(?:json)?|```/g, '').trim();
       let execCmd = null, execArgs = [];
       try {
@@ -151,47 +191,36 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
           execCmd  = parsed.commandName.toLowerCase().trim();
           execArgs = parsed.args.map(a => String(a).trim());
         }
-      } catch {}
+      } catch { /* not JSON */ }
 
       if (execCmd) {
-        return await _executeCommand({
+        return executeCommand({
           api, event, models, Users, Threads, Currencies, commands, cooldowns,
           commandName: execCmd, args: execArgs, senderID, threadID, messageID,
-          ADMINBOT, PERMISSION_LEVEL, PERMISSION_LABEL, dateNow, DeveloperMode, aiMode: true,
+          ADMINBOT, dateNow, DeveloperMode, aiMode: true,
         });
       }
 
+      safeReact(api, messageID, '🟢');
       return api.sendMessage(aiText, threadID, messageID);
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // NORMAL PREFIX COMMAND MODE
+    // PREFIX COMMAND MODE
     // ════════════════════════════════════════════════════════════════════
     const [matchedPrefix] = body.match(prefixRegex);
     const argsFull        = body.slice(matchedPrefix.length).trim().split(/\s+/);
     const commandName     = argsFull.shift()?.toLowerCase() || '';
     const args            = argsFull;
 
-    // ── NEW: Special response when ONLY the prefix is typed (no command) ─────
     if (!commandName) {
       return api.sendMessage(
         `🟢 System Online.\nType ${activePrefix}help to see commands.`,
-        threadID,
-        messageID
+        threadID, messageID,
       );
     }
 
-    let command = commands.get(commandName);
-
-    // Support aliases (exact match)
-    if (!command) {
-      for (const [, cmd] of commands.entries()) {
-        if ((cmd.meta?.aliases || []).some(a => String(a).toLowerCase() === commandName)) {
-          command = cmd;
-          break;
-        }
-      }
-    }
+    let command = resolveCommand(commandName, commands);
 
     if (!command) {
       const allNames = [...commands.keys()];
@@ -201,13 +230,10 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
         command = commands.get(best.target);
       } else {
         return api.sendMessage(
-          `❓ Command "${commandName}" not found.\n` +
-          (best.rating >= 0.3
-            ? `Did you mean: ${activePrefix}${best.target}?\n\n`
-            : '') +
+          `🔴 Command "${commandName}" not found.\n` +
+          (best.rating >= 0.3 ? `Did you mean: ${activePrefix}${best.target}?\n\n` : '') +
           `Type ${activePrefix}help to see all available commands.`,
-          threadID,
-          messageID,
+          threadID, messageID,
         );
       }
     }
@@ -218,132 +244,124 @@ export default function handleCommand({ api, models, Users, Threads, Currencies 
     if (!ADMINBOT.includes(senderID)) {
       const tBans = commandBanned.get(threadID) || [];
       const uBans = commandBanned.get(senderID)  || [];
-      if (tBans.includes(meta.name)) return _bannedReply(api, `⛔ "${meta.name}" is disabled in this thread.`, threadID, messageID);
-      if (uBans.includes(meta.name)) return _bannedReply(api, `⛔ You are banned from "${meta.name}".`,         threadID, messageID);
+      if (tBans.includes(meta.name)) return bannedReply(api, `⛔ "${meta.name}" is disabled in this thread.`, threadID, messageID);
+      if (uBans.includes(meta.name)) return bannedReply(api, `⛔ You are banned from "${meta.name}".`,         threadID, messageID);
+    }
+
+    // ── Only Admin Box mode ──────────────────────────────────────────────
+    // Per-thread setting: when onlyAdminBox is true, only group admins can
+    // use the bot in this thread. Non-admins get a ⚠️ reaction (unless
+    // onlyAdminBoxNoti is false, in which case the message is silently ignored).
+    if (event.isGroup && !ADMINBOT.includes(senderID)) {
+      const tSetting   = threadData.get(threadID) || {};
+      if (tSetting.onlyAdminBox) {
+        const tInfo      = global.data.threadInfo.get(threadID) || {};
+        const isGrpAdmin = (tInfo.adminIDs || []).some(a => String(a.id) === senderID);
+        if (!isGrpAdmin) {
+          // Show ⚠️ reaction by default; suppress it if noti is explicitly false
+          if (tSetting.onlyAdminBoxNoti !== false) {
+            safeReact(api, messageID, '⚠️');
+          }
+          return;
+        }
+      }
     }
 
     // NSFW check
     if (meta.category?.toLowerCase() === 'nsfw' &&
         !global.data.threadAllowNSFW.includes(threadID) &&
         !ADMINBOT.includes(senderID)) {
-      return _bannedReply(api, '🔞 NSFW commands are not enabled in this thread.', threadID, messageID);
+      return bannedReply(api, '🔞 NSFW commands are not enabled in this thread.', threadID, messageID);
     }
 
-    return await _executeCommand({
+    return executeCommand({
       api, event, models, Users, Threads, Currencies, commands, cooldowns,
       commandName: meta.name, args, senderID, threadID, messageID,
-      ADMINBOT, PERMISSION_LEVEL, PERMISSION_LABEL, dateNow, DeveloperMode,
+      ADMINBOT, dateNow, DeveloperMode,
       commandOverride: command,
     });
   };
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// ── Command executor ──────────────────────────────────────────────────────
 
-/** Send a ban/error message then auto-unsend after 5s. */
-async function _bannedReply(api, text, threadID, messageID) {
-  api.sendMessage(text, threadID, async (err, info) => {
-    if (!err) {
-      await new Promise(r => setTimeout(r, 5000));
-      api.unsendMessage(info.messageID);
-    }
-  }, messageID);
-}
-
-/** Resolve permission level for a user (includes PREMIUM) */
-async function _resolvePermission(senderID, threadID, ADMINBOT, Threads) {
-  senderID = String(senderID);
-  if (ADMINBOT.includes(senderID)) return 3;
-
-  // Premium check
-  const isPremium = Array.isArray(global.config.PREMIUM) && global.config.PREMIUM.includes(senderID);
-  if (isPremium) return 2;
-
-  // Group admin check
-  try {
-    const info    = global.data.threadInfo.get(threadID) || await Threads.getInfo(threadID);
-    const isAdmin = (info?.adminIDs || []).some(a => String(a.id) === senderID);
-    return isAdmin ? 1 : 0;
-  } catch {
-    return 0;
-  }
-}
-
-/** Execute a resolved command with full permission + cooldown checks. */
-async function _executeCommand({
+async function executeCommand({
   api, event, models, Users, Threads, Currencies, commands, cooldowns,
   commandName, args, senderID, threadID, messageID,
-  ADMINBOT, PERMISSION_LEVEL, PERMISSION_LABEL, dateNow, DeveloperMode,
+  ADMINBOT, dateNow, DeveloperMode,
   commandOverride = null, aiMode = false,
 }) {
-  // Support aliases in AI-executed commands as well
-  let command = commandOverride || commands.get(commandName);
-  if (!command) {
-    for (const [, cmd] of commands.entries()) {
-      if ((cmd.meta?.aliases || []).some(a => String(a).toLowerCase() === commandName)) {
-        command = cmd;
-        break;
-      }
-    }
-  }
+  const command = commandOverride || resolveCommand(commandName, commands);
 
   if (!command) {
+    safeReact(api, messageID, '🔴');
     return api.sendMessage(
-      `❓ Command "${commandName}" not found.\nType ${global.config.PREFIX || '/'}help to see all available commands.`,
-      threadID,
-      messageID,
+      `🔴 Command "${commandName}" not found.\nType ${global.config.PREFIX || '/'}help to see all available commands.`,
+      threadID, messageID,
     );
   }
 
   const { meta } = command;
 
-  // ── Strict permission + visibility check (synced with help.js) ───────
+  // Permission + visibility check
   if (!isCommandVisible(command, senderID, threadID)) {
     const required = PERMISSION_LEVEL[meta.type] ?? 0;
+    safeReact(api, messageID, '🔴');
     return api.sendMessage(
-      `🔒 "${meta.name}" requires ${PERMISSION_LABEL[required]} permission.`,
+      `🔴 "${meta.name}" requires ${PERMISSION_LABEL[required]} permission.`,
       threadID, messageID,
     );
   }
 
-  const userPerm = await _resolvePermission(senderID, threadID, ADMINBOT, Threads);
+  const userPerm = await resolvePermission(senderID, threadID, ADMINBOT, Threads);
 
   if (!cooldowns.has(meta.name)) cooldowns.set(meta.name, new Map());
   const timestamps     = cooldowns.get(meta.name);
   const expirationTime = (meta.cooldowns || 1) * 1000;
 
   if (timestamps.has(senderID) && dateNow < timestamps.get(senderID) + expirationTime) {
-    return api.setMessageReaction('⏱️', messageID, () => {}, true);
+    return safeReact(api, messageID, '⏱️');
   }
+
+  // ── React ⏳ to signal processing ─────────────────────────────────────
+  safeReact(api, messageID, '⏳');
 
   try {
     const response = createResponse(api, event);
 
-    // ── Usage guide factory (plain text, no markdown) ─────────────────────
-    function createUsage(command) {
-      const prefix = global.config.PREFIX || '';
-      return async function usage() {
-        const m      = command.meta || {};
-        const guides = Array.isArray(m.guide) ? m.guide : [m.guide || ''];
-        let text = '▫️ Usage Guide:\n\n';
-        for (const g of guides)
-          text += g ? `${prefix}${m.name} ${g}\n` : `${prefix}${m.name}\n`;
-        text += `\n📄 ${m.description || 'No description provided.'}`;
-        await response.reply(text);
-      };
-    }
+    const usage = buildUsage(command, response);
 
-    const usage = createUsage(command);
+    await command.onStart({
+      api, event, args, models, Users, Threads, Currencies,
+      response, permission: userPerm, usage,
+    });
 
-    await command.onStart({ api, event, args, models, Users, Threads, Currencies, response, permission: userPerm, usage });
     timestamps.set(senderID, dateNow);
 
+    // ── React 🟢 on success ───────────────────────────────────────────
+    safeReact(api, messageID, '🟢');
+
     if (DeveloperMode) {
-      const prefix = aiMode ? '[AI]' : '';
-      logger(`${prefix} Executed "${meta.name}" | user:${senderID} | thread:${threadID} | ${Date.now() - dateNow}ms`, 'DEV');
+      logger(`${aiMode ? '[AI] ' : ''}Executed "${meta.name}" | user:${senderID} | thread:${threadID} | ${Date.now() - dateNow}ms`, 'DEV');
     }
   } catch (e) {
     logger.error(`"${meta.name}" threw: ${e.message}`);
+    // ── React 🔴 on error ─────────────────────────────────────────────
+    safeReact(api, messageID, '🔴');
     api.sendMessage(`⚠️ Error in "${meta.name}": ${e.message}`, threadID);
   }
+}
+
+/** Build a usage() helper for a command. */
+function buildUsage(command, response) {
+  const prefix = global.config.PREFIX || '';
+  return async function usage() {
+    const m      = command.meta || {};
+    const guides = Array.isArray(m.guide) ? m.guide : [m.guide || ''];
+    let text = '▫️ Usage Guide:\n\n';
+    for (const g of guides)
+      text += g ? `${prefix}${m.name} ${g}\n` : `${prefix}${m.name}\n`;
+    text += `\n📄 ${m.description || 'No description provided.'}`;
+    await response.reply(text);
+  };
 }

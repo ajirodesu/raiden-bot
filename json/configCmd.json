@@ -1,9 +1,4 @@
 {
-  "adminUpdate": {
-    "autoUnsend": true,
-    "sendNoti": true,
-    "timeToUnsend": 10
-  },
   "log": {
     "enable": true
   },

@@ -1,39 +1,702 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Raiden Bot — Dashboard</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #0f0f1a;
-      color: #e0e0ff;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-    }
-    h1 { font-size: 2.5rem; color: #7eb8ff; margin-bottom: .5rem; }
-    p  { color: #aaa; margin-bottom: 1.5rem; }
-    .badge {
-      display: inline-block;
-      padding: .35rem .9rem;
-      border-radius: 999px;
-      background: #1e1e3a;
-      border: 1px solid #7eb8ff44;
-      font-size: .85rem;
-      color: #7eb8ff;
-    }
-    .status { margin-top: 2rem; font-size: .8rem; color: #555; }
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#080810"/>
+<title>Raiden — Dashboard</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+/* FIX: Changed to natural page scrolling instead of forced hidden overflow */
+html, body { min-height: 100%; overflow-x: hidden; background: var(--bg); }
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+:root {
+  --bg: #080810; --surface: rgba(20, 20, 36, 0.85); --surface2: rgba(30, 30, 50, 0.75);
+  --border: rgba(255, 255, 255, 0.08); --border2: rgba(255, 255, 255, 0.12); --text: #ffffff;
+  --text2: rgba(255, 255, 255, 0.6); --text3: rgba(255, 255, 255, 0.35);
+  --pink: #FF2D55; --purple: #BF5AF2; --violet: #7B61FF;
+  --grad: linear-gradient(135deg, #FF2D55 0%, #BF5AF2 55%, #7B61FF 100%);
+  --grad-soft: linear-gradient(135deg, rgba(255,45,85,0.1) 0%, rgba(191,90,242,0.1) 55%, rgba(123,97,255,0.1) 100%);
+  --green: #30D158; --yellow: #FFD60A; --orange: #FF9F0A; --red: #FF453A; --blue: #0A84FF;
+  --radius: 16px; --radius-sm: 12px; --blur: blur(24px);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Menlo', 'Monaco', Courier, monospace;
+}
+
+/* FIX: Utilizing 100dvh for mobile support, allowing body to handle scrolling */
+#app { min-height: 100dvh; display: flex; flex-direction: column; font-family: var(--font); color: var(--text); position: relative; width: 100%; }
+
+.orb { position: fixed; border-radius: 50%; filter: blur(90px); pointer-events: none; z-index: 0; }
+.orb1 { width: 400px; height: 400px; background: radial-gradient(circle, rgba(255,45,85,0.15), transparent 70%); top: -100px; right: -80px; }
+.orb2 { width: 320px; height: 320px; background: radial-gradient(circle, rgba(191,90,242,0.12), transparent 70%); bottom: 40px; left: -80px; }
+
+/* FIX: Sticky header so it stays accessible when scrolling down */
+#header { position: sticky; top: 0; flex-shrink: 0; padding: env(safe-area-inset-top, 0px) 20px 0; background: rgba(8, 8, 16, 0.75); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border-bottom: 1px solid var(--border); z-index: 100; }
+.header-inner { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; gap: 12px; }
+.header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.avatar { width: 44px; height: 44px; border-radius: 12px; background: var(--grad); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; flex-shrink: 0; box-shadow: 0 4px 16px rgba(191, 90, 242, 0.3); }
+.header-title { min-width: 0; }
+.header-title h1 { font-size: 18px; font-weight: 700; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; }
+.header-title p { font-size: 13px; color: var(--text2); margin-top: 2px; font-weight: 500; }
+.header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+
+.status-pill { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 99px; background: var(--surface2); border: 1px solid var(--border2); font-size: 12px; font-weight: 600; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.status-dot.starting { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+.status-dot.restarting { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+.status-dot.crashed, .status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+.btn-refresh { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border2); background: var(--surface2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; transition: all .2s cubic-bezier(0.4, 0, 0.2, 1); }
+.btn-refresh:hover { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-refresh.spinning { animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite; color: var(--purple); }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Stats */
+#stats-bar { flex-shrink: 0; padding: 16px 20px 12px; z-index: 5; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.stat-card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 10px; text-align: center; backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); position: relative; overflow: hidden; transition: transform 0.2s; cursor: default; }
+.stat-card::before { content: ''; position: absolute; inset: 0; background: var(--grad-soft); opacity: 0; transition: opacity .3s; }
+.stat-card:hover { transform: translateY(-2px); }
+.stat-card:hover::before { opacity: 1; }
+.stat-icon { font-size: 22px; margin-bottom: 6px; line-height: 1; color: var(--text2); }
+.stat-value { font-size: 22px; font-weight: 700; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1.2; letter-spacing: -0.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-label { font-size: 11px; color: var(--text3); margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+
+/* Tabs */
+#tabs { flex-shrink: 0; padding: 0 20px 12px; z-index: 5; }
+.seg { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); }
+.seg-btn { flex: 1; padding: 8px 0; border: none; background: transparent; color: var(--text2); font-size: 13px; font-weight: 600; font-family: var(--font); border-radius: 8px; cursor: pointer; transition: all .25s ease; white-space: nowrap; }
+.seg-btn:hover { color: var(--text); }
+.seg-btn.active { background: var(--grad); color: #fff; box-shadow: 0 2px 12px rgba(191,90,242,.3); }
+
+/* Content Area - FIX: Let natural flow happen, removed rigid overflow constraints */
+#content { flex: 1; padding: 0 20px 40px; z-index: 1; width: 100%; max-width: 100%; }
+.panel { display: none; animation: fadeIn 0.3s ease; }
+.panel.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+.section-header { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 10px; }
+.section-title { font-size: 14px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .8px; }
+.section-count { font-size: 12px; font-weight: 700; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 100%; }
+
+/* List Styles */
+.list-item { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--border); transition: background .2s; }
+.list-item:last-child { border-bottom: none; }
+.list-item:hover { background: rgba(255,255,255,.04); }
+.item-icon { width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0; background: rgba(191,90,242,0.15); border: 1px solid rgba(191,90,242,0.3); color: var(--purple); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.item-body { flex: 1; min-width: 0; }
+.item-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.item-desc { font-size: 13px; color: var(--text2); margin-top: 4px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.item-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* Tags */
+.tag { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; }
+.tag-cat { background: rgba(191,90,242,.15); color: var(--purple); border: 1px solid rgba(191,90,242,.2); }
+.tag-type.anyone { background: rgba(48,209,88,.15); color: var(--green); border: 1px solid rgba(48,209,88,.2); }
+.tag-type.groupadmin { background: rgba(255,159,10,.15); color: var(--orange); border: 1px solid rgba(255,159,10,.2); }
+.tag-type.premium { background: rgba(10,132,255,.15); color: var(--blue); border: 1px solid rgba(10,132,255,.2); }
+.tag-type.developer { background: rgba(255,45,85,.15); color: var(--pink); border: 1px solid rgba(255,45,85,.2); }
+.tag-evt { background: rgba(123,97,255,.15); color: var(--violet); border: 1px solid rgba(123,97,255,.2); }
+.tag-alias { background: rgba(255,255,255,.08); color: var(--text2); border: 1px solid rgba(255,255,255,.1); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+.item-right { flex-shrink: 0; color: var(--text3); font-size: 18px; margin-left: 4px; display: flex; align-items: center; justify-content: center; height: 38px; }
+
+/* Overview Grid */
+.overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.ov-card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); padding: 18px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+.ov-card.full { grid-column: 1 / -1; }
+.ov-label { font-size: 12px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ov-value { font-size: 24px; font-weight: 700; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1.2; letter-spacing: -0.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-sub { font-size: 12px; color: var(--text2); margin-top: 6px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Config Area */
+.cfg-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); gap: 14px; }
+.cfg-row:last-child { border-bottom: none; }
+.cfg-key { font-size: 14px; font-weight: 600; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* FIX: Better overflow wrapping for config values */
+.cfg-val { font-size: 13px; color: var(--text2); font-family: var(--font-mono); text-align: right; overflow-wrap: anywhere; word-break: break-word; max-width: 60%; background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); }
+.cfg-val.array { color: var(--purple); background: rgba(191,90,242,0.1); border-color: rgba(191,90,242,0.2); }
+
+/* Config boolean badge (replaces toggles) */
+.cfg-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; flex-shrink: 0; }
+.cfg-badge.on  { background: rgba(48,209,88,.15);  color: var(--green);  border: 1px solid rgba(48,209,88,.25); }
+.cfg-badge.off { background: rgba(255,69,58,.12);  color: var(--red);    border: 1px solid rgba(255,69,58,.2); }
+.cfg-badge i   { font-size: 13px; }
+
+/* ── Detail Modal ────────────────────────────────────────────────────────── */
+#modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: flex-end; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s ease;
+}
+#modal-overlay.open { opacity: 1; pointer-events: all; }
+#modal-sheet {
+  width: 100%; max-width: 800px;
+  background: #0f0f1c; border: 1px solid var(--border2);
+  border-radius: 24px 24px 0 0;
+  padding: 0 0 env(safe-area-inset-bottom, 24px);
+  max-height: 85dvh; display: flex; flex-direction: column;
+  transform: translateY(30px);
+  transition: transform .3s cubic-bezier(0.34,1.2,0.64,1);
+  overflow: hidden;
+}
+#modal-overlay.open #modal-sheet { transform: translateY(0); }
+
+.modal-handle { width: 40px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.15); margin: 14px auto 0; flex-shrink: 0; }
+.modal-header { display: flex; align-items: flex-start; gap: 14px; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.modal-icon { width: 48px; height: 48px; border-radius: 14px; flex-shrink: 0; background: rgba(191,90,242,0.15); border: 1px solid rgba(191,90,242,0.3); color: var(--purple); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+.modal-icon.evt { background: rgba(123,97,255,.15); border-color: rgba(123,97,255,.3); color: var(--violet); }
+.modal-title-block { flex: 1; min-width: 0; }
+.modal-name { font-size: 20px; font-weight: 700; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -.3px; }
+.modal-type-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.modal-close { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--border2); background: var(--surface2); color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; transition: all .2s; }
+.modal-close:hover { background: var(--surface); color: var(--text); }
+
+.modal-body { overflow-y: auto; padding: 18px 20px 24px; display: flex; flex-direction: column; gap: 18px; }
+.modal-section-label { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 6px; }
+.modal-desc { font-size: 14px; color: var(--text2); line-height: 1.6; }
+.modal-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--border); gap: 12px; }
+.modal-row + .modal-row { margin-top: 6px; }
+.modal-row-key { font-size: 13px; font-weight: 600; color: var(--text2); }
+.modal-row-val { font-size: 13px; font-family: var(--font-mono); color: var(--text); background: rgba(255,255,255,.06); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-aliases { display: flex; flex-wrap: wrap; gap: 6px; }
+.modal-alias-tag { display: inline-flex; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: rgba(255,255,255,.07); border: 1px solid var(--border2); color: var(--text2); font-family: var(--font-mono); }
+.modal-evt-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Dev Card */
+.dev-card { display: flex; align-items: center; gap: 14px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-top: 16px; backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); overflow: hidden; }
+.dev-avatar { width: 48px; height: 48px; border-radius: 14px; background: rgba(191,90,242,0.15); border: 1px solid rgba(191,90,242,0.3); color: var(--purple); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+.dev-info { min-width: 0; }
+.dev-name { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.dev-link { font-size: 13px; color: var(--purple); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; font-weight: 500; max-width: 100%; }
+.dev-link:hover { text-decoration: underline; }
+
+/* Filter Chips */
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid rgba(191,90,242,.2); font-family: var(--font); background: rgba(191,90,242,.1); color: var(--purple); transition: all .2s; white-space: nowrap; }
+.chip:hover { background: rgba(191,90,242,.2); }
+.chip.active { background: var(--grad); color: #fff; border-color: transparent; box-shadow: 0 2px 10px rgba(191,90,242,.3); }
+
+/* States */
+.empty { text-align: center; padding: 40px 20px; color: var(--text3); font-size: 14px; font-weight: 500; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.empty i { font-size: 32px; color: rgba(255,255,255,0.1); }
+.skeleton { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+
+/* Toast */
+#toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(60px); background: var(--surface2); border: 1px solid var(--border2); box-shadow: 0 10px 30px rgba(0,0,0,0.3); border-radius: 12px; padding: 12px 20px; font-size: 14px; font-weight: 500; backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); transition: transform .4s cubic-bezier(.34,1.56,.64,1), opacity .4s; opacity: 0; z-index: 999; max-width: 90vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+#toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+@media(max-width: 400px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } .overview-grid { grid-template-columns: 1fr; } .ov-card.full { grid-column: 1; } }
+@media(min-width: 768px) { #app { max-width: 800px; margin: 0 auto; box-shadow: 0 0 40px rgba(0,0,0,0.5); background: var(--bg); } body { background: #050508; } }
+</style>
 </head>
 <body>
-  <h1>⚡ Raiden Bot</h1>
-  <p>Facebook Messenger Bot — running successfully.</p>
-  <span class="badge">🟢 Online</span>
-  <div class="status">Built with Node.js ESM · Powered by stfca</div>
+<div id="app">
+  <div class="orb orb1"></div><div class="orb orb2"></div>
+
+  <div id="header">
+    <div class="header-inner">
+      <div class="header-left">
+        <div class="avatar"><i class="ph-bold ph-lightning"></i></div>
+        <div class="header-title">
+          <h1 id="hdr-name">Raiden Bot</h1>
+          <p id="hdr-sub">Loading dashboard…</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="status-pill">
+          <div class="status-dot starting" id="status-dot"></div>
+          <span id="status-text">Starting</span>
+        </div>
+        <button class="btn-refresh" id="btn-refresh" title="Refresh">
+          <i class="ph-bold ph-arrows-clockwise"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="stats-bar">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon"><i class="ph-fill ph-terminal-window"></i></div>
+        <div class="stat-value" id="sc-cmds">—</div>
+        <div class="stat-label">Commands</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon"><i class="ph-fill ph-broadcast"></i></div>
+        <div class="stat-value" id="sc-evts">—</div>
+        <div class="stat-label">Events</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon"><i class="ph-fill ph-chats-circle"></i></div>
+        <div class="stat-value" id="sc-threads">—</div>
+        <div class="stat-label">Threads</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon"><i class="ph-fill ph-users"></i></div>
+        <div class="stat-value" id="sc-users">—</div>
+        <div class="stat-label">Users</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tabs">
+    <div class="seg">
+      <button class="seg-btn active" data-tab="overview">Overview</button>
+      <button class="seg-btn" data-tab="commands">Commands</button>
+      <button class="seg-btn" data-tab="events">Events</button>
+      <button class="seg-btn" data-tab="config">Config</button>
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="panel active" id="tab-overview">
+      <div class="overview-grid">
+        <div class="ov-card">
+          <div class="ov-label"><i class="ph ph-clock"></i> Uptime</div>
+          <div class="ov-value" id="ov-uptime">—</div>
+          <div class="ov-sub">Since last boot</div>
+        </div>
+        <div class="ov-card">
+          <div class="ov-label"><i class="ph ph-keyboard"></i> Prefix</div>
+          <div class="ov-value" id="ov-prefix">—</div>
+          <div class="ov-sub">Command trigger</div>
+        </div>
+        <div class="ov-card">
+          <div class="ov-label"><i class="ph ph-robot"></i> Bot Name</div>
+          <div class="ov-value" style="font-size:20px" id="ov-name">—</div>
+          <div class="ov-sub">Messenger identity</div>
+        </div>
+        <div class="ov-card">
+          <div class="ov-label"><i class="ph ph-globe"></i> Timezone</div>
+          <div class="ov-value" style="font-size:16px" id="ov-tz">—</div>
+          <div class="ov-sub">Timestamp zone</div>
+        </div>
+        <div class="ov-card full">
+          <div class="ov-label"><i class="ph ph-code"></i> Developer</div>
+          <div id="ov-dev">
+            <div class="skeleton" style="height:14px;border-radius:7px;background:var(--surface2);width:50%"></div>
+          </div>
+        </div>
+        <div class="ov-card full">
+          <div class="ov-label" style="margin-bottom:12px"><i class="ph ph-sliders-horizontal"></i> Feature Flags</div>
+          <div id="ov-flags"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="tab-commands">
+      <div class="section-header">
+        <span class="section-title">All Commands</span>
+        <span class="section-count" id="cmd-count"></span>
+      </div>
+      <div id="cat-filter" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+      <div class="card" id="cmd-list">
+        <div class="empty skeleton"><i class="ph ph-spinner-gap ph-spin"></i> Loading data…</div>
+      </div>
+    </div>
+
+    <div class="panel" id="tab-events">
+      <div class="section-header">
+        <span class="section-title">Event Modules</span>
+        <span class="section-count" id="evt-count"></span>
+      </div>
+      <div class="card" id="evt-list">
+        <div class="empty skeleton"><i class="ph ph-spinner-gap ph-spin"></i> Loading data…</div>
+      </div>
+    </div>
+
+    <div class="panel" id="tab-config">
+      <div class="section-header">
+        <span class="section-title">Configuration</span>
+        <span style="font-size:12px;color:var(--text3)"><i class="ph ph-lock-key"></i> Keys hidden</span>
+      </div>
+      <div id="cfg-wrap"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Detail Modal ──────────────────────────────────────────────────────── -->
+<div id="modal-overlay" role="dialog" aria-modal="true">
+  <div id="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="modal-icon" id="modal-icon"><i class="ph-fill ph-package"></i></div>
+      <div class="modal-title-block">
+        <div class="modal-name" id="modal-name">—</div>
+        <div class="modal-type-row" id="modal-tags"></div>
+      </div>
+      <button class="modal-close" id="modal-close" aria-label="Close"><i class="ph-bold ph-x"></i></button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let D = null, activeTab = 'overview', activeCat = 'all', rfTimer = null;
+let _uptimeBase = 0, _uptimeFetchedAt = 0, _uptimeTicker = null, _prefix = '+', _botName = 'Raiden';
+let _allCmds = [], _allEvts = [];
+
+/* ── Utilities ─────────────────────────────────────────────────────────── */
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600),
+        m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const p = [];
+  if (d) p.push(`${d}d`);
+  if (h) p.push(`${h}h`);
+  if (m) p.push(`${m}m`);
+  p.push(`${sec}s`);
+  return p.join(' ');
+}
+
+/* ── Live uptime ticker (updates every second, no API call needed) ──────── */
+function startUptimeTicker() {
+  if (_uptimeTicker) clearInterval(_uptimeTicker);
+  _uptimeTicker = setInterval(() => {
+    if (!_uptimeFetchedAt) return;
+    const live = _uptimeBase + (Date.now() - _uptimeFetchedAt);
+    const str  = fmtUptime(live);
+    document.getElementById('ov-uptime').textContent = str;
+    document.getElementById('hdr-sub').textContent   = `Prefix: ${_prefix}  ·  ${str}`;
+  }, 1000);
+}
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+function toast(icon, msg) {
+  const e = document.getElementById('toast');
+  e.innerHTML = `<i class="ph-fill ${icon}" style="font-size:18px"></i> ${msg}`;
+  e.classList.add('show');
+  clearTimeout(e._t);
+  e._t = setTimeout(() => e.classList.remove('show'), 2800);
+}
+
+/* ── Modal ──────────────────────────────────────────────────────────────── */
+const overlay   = document.getElementById('modal-overlay');
+const modalClose = document.getElementById('modal-close');
+
+function openModal(item, kind) {
+  const iconEl  = document.getElementById('modal-icon');
+  const nameEl  = document.getElementById('modal-name');
+  const tagsEl  = document.getElementById('modal-tags');
+  const bodyEl  = document.getElementById('modal-body');
+
+  if (kind === 'command') {
+    const tc = (item.type || 'anyone').toLowerCase();
+    iconEl.className  = 'modal-icon';
+    iconEl.innerHTML  = `<i class="ph-fill ${cIcon(item.category)}"></i>`;
+    nameEl.textContent = item.name || '—';
+
+    tagsEl.innerHTML =
+      (item.category ? `<span class="tag tag-cat">${esc(item.category)}</span>` : '') +
+      `<span class="tag tag-type ${tc}">${esc(item.type || 'anyone')}</span>`;
+
+    let html = '';
+    if (item.description) {
+      html += `<div><div class="modal-section-label">Description</div>
+               <div class="modal-desc">${esc(item.description)}</div></div>`;
+    }
+    const meta = [
+      ['Version',  item.version],
+      ['Author',   item.author],
+      ['Category', item.category],
+      ['Type',     item.type],
+    ].filter(([,v]) => v);
+    if (meta.length) {
+      html += '<div>' + meta.map(([k,v]) =>
+        `<div class="modal-row"><span class="modal-row-key">${esc(k)}</span><span class="modal-row-val">${esc(v)}</span></div>`
+      ).join('') + '</div>';
+    }
+    const aliases = (item.aliases || []).filter(Boolean);
+    if (aliases.length) {
+      html += `<div><div class="modal-section-label">Aliases</div>
+               <div class="modal-aliases">${aliases.map(a => `<span class="modal-alias-tag">${esc(a)}</span>`).join('')}</div></div>`;
+    }
+    bodyEl.innerHTML = html || '<div class="modal-desc" style="color:var(--text3)">No additional metadata.</div>';
+
+  } else {
+    iconEl.className  = 'modal-icon evt';
+    iconEl.innerHTML  = `<i class="ph-fill ph-broadcast"></i>`;
+    nameEl.textContent = item.name || '—';
+    tagsEl.innerHTML   = (item.eventType || []).map(t => `<span class="tag tag-evt">${esc(t)}</span>`).join('');
+
+    let html = '';
+    if (item.description) {
+      html += `<div><div class="modal-section-label">Description</div>
+               <div class="modal-desc">${esc(item.description)}</div></div>`;
+    }
+    const meta = [
+      ['Version', item.version],
+      ['Author',  item.author],
+    ].filter(([,v]) => v);
+    if (meta.length) {
+      html += '<div>' + meta.map(([k,v]) =>
+        `<div class="modal-row"><span class="modal-row-key">${esc(k)}</span><span class="modal-row-val">${esc(v)}</span></div>`
+      ).join('') + '</div>';
+    }
+    if ((item.eventType||[]).length) {
+      html += `<div><div class="modal-section-label">Event Types</div>
+               <div class="modal-evt-tags">${item.eventType.map(t => `<span class="tag tag-evt">${esc(t)}</span>`).join('')}</div></div>`;
+    }
+    bodyEl.innerHTML = html || '<div class="modal-desc" style="color:var(--text3)">No additional metadata.</div>';
+  }
+
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+  overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+modalClose.addEventListener('click', closeModal);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+
+document.querySelectorAll('.seg-btn').forEach(b => b.addEventListener('click', () => {
+  if (activeTab === b.dataset.tab) return;
+  document.querySelectorAll('.seg-btn').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  activeTab = b.dataset.tab;
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + activeTab).classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}));
+
+/* ── Refresh button ─────────────────────────────────────────────────────── */
+const rBtn = document.getElementById('btn-refresh');
+rBtn.addEventListener('click', () => fetchStats(true));
+
+function startAuto() {
+  clearInterval(rfTimer);
+  rfTimer = setInterval(() => fetchStats(false), 30000);
+}
+
+/* ── Fetch + render ─────────────────────────────────────────────────────── */
+async function fetchStats(manual) {
+  if (manual) { rBtn.classList.add('spinning'); toast('ph-arrows-clockwise', 'Refreshing dashboard…'); }
+  try {
+    const r = await fetch('/api/stats');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    D = await r.json();
+    /* Sync uptime base so the live ticker starts from the right value */
+    _uptimeBase      = D.uptimeMs ?? 0;
+    _uptimeFetchedAt = Date.now();
+    render(D);
+    if (manual) toast('ph-check-circle', 'Dashboard Updated');
+  } catch (e) {
+    if (manual) toast('ph-warning-circle', 'Error: ' + e.message);
+  } finally {
+    rBtn.classList.remove('spinning');
+  }
+}
+
+/* ── Icon map (category → Phosphor icon class) ──────────────────────────── */
+const ICONS = {
+  system: 'ph-robot', economy: 'ph-coins', utility: 'ph-wrench', group: 'ph-users-three',
+  owner: 'ph-key', config: 'ph-gear', 'contacts admin': 'ph-envelope-simple', fun: 'ph-confetti',
+  game: 'ph-game-controller', admin: 'ph-shield-check', media: 'ph-film-strip', misc: 'ph-package',
+  event: 'ph-broadcast', information: 'ph-info', nsfw: 'ph-warning', 'box chat': 'ph-chat-circle'
+};
+function cIcon(c) { return ICONS[(c||'').toLowerCase()] || 'ph-package'; }
+
+const BOOL_KEYS = ['DeveloperMode','DeveloperOnly','autoReaction','autoCreateDB','allowInbox','autoClean','adminOnly'];
+const SKIP      = ['GROQ_API_KEY','APPSTATEPATH','DATABASE','FCAOption'];
+
+/* ── Core render ────────────────────────────────────────────────────────── */
+function render(d) {
+  _prefix  = d.prefix  || '+';
+  _botName = d.botName || 'Raiden';
+
+  document.getElementById('hdr-name').textContent = _botName;
+  document.title = `${_botName} — Dashboard`;
+
+  /* Status pill */
+  const dot = document.getElementById('status-dot');
+  const st  = d.status || 'starting';
+  dot.className = 'status-dot ' + st;
+  document.getElementById('status-text').textContent = st.charAt(0).toUpperCase() + st.slice(1);
+
+  /* Stats counters — all come from API, always reflect real file counts */
+  const s = d.stats || {};
+  document.getElementById('sc-cmds').textContent    = s.commands ?? '—';
+  document.getElementById('sc-evts').textContent    = s.events   ?? '—';
+  document.getElementById('sc-threads').textContent = s.threads  ?? '—';
+  document.getElementById('sc-users').textContent   = s.users    ?? '—';
+
+  /* Overview cards */
+  document.getElementById('ov-prefix').textContent = _prefix;
+  document.getElementById('ov-name').textContent   = _botName;
+  document.getElementById('ov-tz').textContent     = d.config?.TIMEZONE || '—';
+
+  /* Developer card */
+  const dev   = d.config?.DEVELOPER;
+  const devEl = document.getElementById('ov-dev');
+  devEl.innerHTML = dev?.NAME
+    ? `<div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+         <div class="dev-avatar" style="margin-top:0"><i class="ph-fill ph-code"></i></div>
+         <div class="dev-info">
+           <div class="dev-name">${esc(dev.NAME)}</div>
+           ${dev.LINK ? `<a class="dev-link" href="${esc(dev.LINK)}" target="_blank" rel="noopener"><i class="ph ph-link"></i> ${esc(dev.LINK)}</a>` : ''}
+         </div>
+       </div>`
+    : '<span style="font-size:13px;color:var(--text3)">Not configured</span>';
+
+  /* Feature flags — boolean values shown as plain on/off badges */
+  const cfg     = d.config || {};
+  const flagsEl = document.getElementById('ov-flags');
+  flagsEl.innerHTML = BOOL_KEYS.filter(k => cfg[k] !== undefined).map(k => {
+    const on = !!cfg[k];
+    return `<div class="cfg-row" style="padding:10px 0;border-color:var(--border)">
+              <span class="cfg-key">${esc(k)}</span>
+              <span class="cfg-badge ${on ? 'on' : 'off'}">
+                <i class="ph-bold ${on ? 'ph-check-circle' : 'ph-x-circle'}"></i>${on ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>`;
+  }).join('');
+
+  /* All panels are data-driven — no manual entries */
+  renderCmds(d.commands || []);
+  renderEvts(d.events   || []);
+  renderCfg(cfg, d);
+}
+
+/* ── Commands panel ─────────────────────────────────────────────────────── */
+function renderCmds(cmds) {
+  _allCmds = cmds;
+  document.getElementById('cmd-count').textContent = cmds.length + ' total';
+
+  const cats = ['all', ...new Set(cmds.map(c => (c.category || 'misc').toLowerCase()))];
+  const fEl  = document.getElementById('cat-filter');
+
+  fEl.innerHTML = cats.map(c =>
+    `<button class="chip ${c === activeCat ? 'active' : ''}" data-cat="${esc(c)}">
+       <i class="${c === 'all' ? 'ph-bold ph-magnifying-glass' : 'ph-bold ' + cIcon(c)}"></i>
+       ${c === 'all' ? 'All' : esc(c)}
+     </button>`
+  ).join('');
+
+  fEl.querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', () => {
+    activeCat = b.dataset.cat;
+    renderCmds(cmds);
+  }));
+
+  const filtered = activeCat === 'all' ? cmds : cmds.filter(c => (c.category||'misc').toLowerCase() === activeCat);
+  const lEl      = document.getElementById('cmd-list');
+
+  if (!filtered.length) {
+    lEl.innerHTML = '<div class="empty"><i class="ph ph-folder-open"></i> No commands in this category</div>';
+    return;
+  }
+
+  lEl.innerHTML = filtered.map((c, i) => {
+    const tc = (c.type || 'anyone').toLowerCase();
+    return `<div class="list-item" style="cursor:pointer" data-kind="command" data-idx="${i}">
+      <div class="item-icon"><i class="ph-fill ${cIcon(c.category)}"></i></div>
+      <div class="item-body">
+        <div class="item-name">${esc(c.name)}</div>
+        ${c.description ? `<div class="item-desc">${esc(c.description)}</div>` : ''}
+        <div class="item-meta">
+          ${c.category ? `<span class="tag tag-cat">${esc(c.category)}</span>` : ''}
+          <span class="tag tag-type ${tc}">${esc(c.type || 'anyone')}</span>
+          ${(c.aliases||[]).filter(Boolean).slice(0,3).map(a => `<span class="tag tag-alias">${esc(a)}</span>`).join('')}
+        </div>
+      </div>
+      <div class="item-right"><i class="ph-bold ph-caret-right"></i></div>
+    </div>`;
+  }).join('');
+
+  /* Wire click — use the filtered array for correct index mapping */
+  lEl.querySelectorAll('.list-item[data-kind="command"]').forEach((el, i) => {
+    el.addEventListener('click', () => openModal(filtered[i], 'command'));
+  });
+}
+
+/* ── Events panel ───────────────────────────────────────────────────────── */
+function renderEvts(evts) {
+  _allEvts = evts;
+  document.getElementById('evt-count').textContent = evts.length + ' modules';
+  const lEl = document.getElementById('evt-list');
+
+  if (!evts.length) {
+    lEl.innerHTML = '<div class="empty"><i class="ph ph-folder-open"></i> No event modules found</div>';
+    return;
+  }
+
+  lEl.innerHTML = evts.map((e, i) => `
+    <div class="list-item" style="cursor:pointer" data-idx="${i}">
+      <div class="item-icon"><i class="ph-fill ph-broadcast"></i></div>
+      <div class="item-body">
+        <div class="item-name">${esc(e.name)}</div>
+        ${e.description ? `<div class="item-desc">${esc(e.description)}</div>` : ''}
+        <div class="item-meta">
+          ${(e.eventType||[]).map(t => `<span class="tag tag-evt">${esc(t)}</span>`).join('')}
+          ${e.author ? `<span class="tag tag-alias"><i class="ph ph-user"></i> ${esc(e.author.split('|')[0].trim())}</span>` : ''}
+        </div>
+      </div>
+      <div class="item-right"><i class="ph-bold ph-caret-right"></i></div>
+    </div>`).join('');
+
+  lEl.querySelectorAll('.list-item').forEach((el, i) => {
+    el.addEventListener('click', () => openModal(evts[i], 'event'));
+  });
+}
+
+/* ── Config panel ───────────────────────────────────────────────────────── */
+function renderCfg(cfg, d) {
+  const dev = d.config?.DEVELOPER;
+  let html = dev?.NAME
+    ? `<div class="dev-card">
+         <div class="dev-avatar"><i class="ph-fill ph-code"></i></div>
+         <div class="dev-info">
+           <div class="dev-name">${esc(dev.NAME)}</div>
+           ${dev.LINK ? `<a class="dev-link" href="${esc(dev.LINK)}" target="_blank" rel="noopener"><i class="ph ph-link"></i> ${esc(dev.LINK)}</a>` : ''}
+         </div>
+       </div>` : '';
+
+  html += '<div class="section-header" style="margin-top:20px"><span class="section-title">Settings</span></div><div class="card">';
+
+  /* Dynamically render every config key — booleans get badges, arrays get pill lists, strings get mono chips */
+  Object.entries(cfg).filter(([k]) => !SKIP.includes(k) && k !== 'DEVELOPER').forEach(([k, v]) => {
+    if (BOOL_KEYS.includes(k)) {
+      const on = !!v;
+      html += `<div class="cfg-row"><span class="cfg-key">${esc(k)}</span>
+               <span class="cfg-badge ${on ? 'on' : 'off'}"><i class="ph-bold ${on ? 'ph-check-circle' : 'ph-x-circle'}"></i>${on ? 'Enabled' : 'Disabled'}</span></div>`;
+    } else if (Array.isArray(v)) {
+      html += `<div class="cfg-row"><span class="cfg-key">${esc(k)}</span><span class="cfg-val array">${v.length ? v.map(x => esc(String(x))).join(', ') : 'None'}</span></div>`;
+    } else if (typeof v !== 'object' || v === null) {
+      html += `<div class="cfg-row"><span class="cfg-key">${esc(k)}</span><span class="cfg-val">${esc(String(v))}</span></div>`;
+    }
+  });
+
+  html += '</div><div style="height:12px"></div>';
+  document.getElementById('cfg-wrap').innerHTML = html;
+}
+
+/* ── Bootstrap ──────────────────────────────────────────────────────────── */
+startUptimeTicker();
+fetchStats(false);
+startAuto();
+</script>
 </body>
 </html>

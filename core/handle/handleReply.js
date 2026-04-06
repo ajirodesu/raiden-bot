@@ -1,3 +1,4 @@
+import logger             from '../utils/log.js';
 import { createResponse } from '../system/response.js';
 
 /**
@@ -21,8 +22,7 @@ export default function handleReply({ api, models, Users, Threads, Currencies })
     if (!command) {
       return api.sendMessage(
         `⚠️ Could not find the command handler for this reply: "${replyData.name}".`,
-        threadID,
-        messageID,
+        threadID, messageID,
       );
     }
 
@@ -30,22 +30,12 @@ export default function handleReply({ api, models, Users, Threads, Currencies })
 
     try {
       const response = createResponse(api, event);
-      await command.onReply({
-        api,
-        event,
-        models,
-        Users,
-        Threads,
-        Currencies,
-        response,
-        onReply: replyData,
-      });
+      await command.onReply({ api, event, models, Users, Threads, Currencies, response, onReply: replyData });
     } catch (error) {
-      console.error(`[handleReply] "${replyData.name}" threw:`, error);
+      logger.error(`[handleReply] "${replyData.name}" threw: ${error.message}`);
       api.sendMessage(
-        `⚠️ An error occurred in the reply handler for "${replyData.name}":\n${error.message}`,
-        threadID,
-        messageID,
+        `🔴 An error occurred in the reply handler for "${replyData.name}":\n${error.message}`,
+        threadID, messageID,
       );
     }
   };

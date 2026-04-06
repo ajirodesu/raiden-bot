@@ -1,5 +1,6 @@
 /**
  * Threads controller — wraps Sequelize operations for the Threads table.
+ * Aliases: get → getData, set → setData (backward-compat with commands).
  */
 export default function ThreadsController({ models, api }) {
   const Threads = models.use('Threads');
@@ -75,5 +76,10 @@ export default function ThreadsController({ models, api }) {
     }
   }
 
-  return { getInfo, getAll, getData, setData, delData, createData };
+  return {
+    getInfo, getAll, getData, setData, delData, createData,
+    // Backward-compat aliases
+    get: getData,
+    set: setData,
+  };
 }

@@ -1,3 +1,4 @@
+import logger             from '../utils/log.js';
 import { createResponse } from '../system/response.js';
 
 /**
@@ -19,8 +20,7 @@ export default function handleReaction({ api, models, Users, Threads, Currencies
     if (!command) {
       return api.sendMessage(
         `⚠️ Could not find the command handler for this reaction: "${reactionData.name}".`,
-        threadID,
-        messageID,
+        threadID, messageID,
       );
     }
 
@@ -28,22 +28,12 @@ export default function handleReaction({ api, models, Users, Threads, Currencies
 
     try {
       const response = createResponse(api, event);
-      await command.onReaction({
-        api,
-        event,
-        models,
-        Users,
-        Threads,
-        Currencies,
-        response,
-        onReaction: reactionData,
-      });
+      await command.onReaction({ api, event, models, Users, Threads, Currencies, response, onReaction: reactionData });
     } catch (error) {
-      console.error(`[handleReaction] "${reactionData.name}" threw:`, error);
+      logger.error(`[handleReaction] "${reactionData.name}" threw: ${error.message}`);
       api.sendMessage(
-        `⚠️ An error occurred in the reaction handler for "${reactionData.name}":\n${error.message}`,
-        threadID,
-        messageID,
+        `🔴 An error occurred in the reaction handler for "${reactionData.name}":\n${error.message}`,
+        threadID, messageID,
       );
     }
   };
