@@ -76,6 +76,15 @@ const NOISE_PATTERNS = [
   /Array\.isArray\(\)/i,
   /at promisified/i,
   /at Object\.setMessageReaction/i,
+  // Suppress raw FCA createPoll response dumps — these produce many
+  // repeated [RAIDEN] lines for a single failure. A single [ERROR] line
+  // is emitted instead via the externalCreatePollError handler below.
+  /^\s*createPoll\s*\{/i,
+  /\[poll\]\s*createPoll\s*(error|failed)/i,
+  /\b__ar\s*:/i,
+  /\brid\s*:\s*['"][A-Za-z0-9_-]+['"]/,
+  /\bshowUser\s*:\s*(?:true|false)/i,
+  /\blid\s*:\s*['"]\d+['"]/,
 ];
 
 function getRawLog() {
@@ -175,7 +184,16 @@ logger.external = function (message, tag = 'RAIDEN') {
     .filter(line => line && !NOISE_PATTERNS.some(re => re.test(line)));
 
   if (!lines.length) {
-    getRawLog()('');
+    // Even if every line matched a NOISE_PATTERN, still surface a single
+    // [ERROR] line when the raw text looks like a createPoll API failure,
+    // so the operator knows it happened without seeing the full dump.
+    const raw = text.toLowerCase();
+    if (
+      (raw.includes('createpoll') || raw.includes('[poll]')) &&
+      (raw.includes('failure') || raw.includes('error'))
+    ) {
+      logger.error('[api] createPoll failed — Facebook rejected the request (not a bot error).');
+    }
     return;
   }
 
@@ -188,8 +206,24 @@ logger.external = function (message, tag = 'RAIDEN') {
     }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index);
 
-  for (const item of grouped) {
-    emitTaggedLine(item.tag, item.line);
+  // ── Single-prefix output ────────────────────────────────────────────
+  // If the external source emitted a multi-line block (e.g. a serialised
+  // error object), print only the FIRST line with the coloured tag and
+  // indent every subsequent line so the console stays readable without
+  // repeating [RAIDEN] / [ERROR] on every single line.
+  if (grouped.length === 1) {
+    emitTaggedLine(grouped[0].tag, grouped[0].line);
+  } else {
+    const first    = grouped[0];
+    const upper    = String(first.tag).toUpperCase();
+    const colorFn  = TAG_COLORS[upper] || C.SYSTEM;
+    const tagLabel = colorFn(`[${upper}]`);
+    const indent   = ' '.repeat(tagLabel.replace(ANSI_RE, '').length + 1);
+
+    getRawLog()(`${tagLabel} ${first.line}`);
+    for (let i = 1; i < grouped.length; i++) {
+      getRawLog()(`${indent}${grouped[i].line}`);
+    }
   }
 };
 
